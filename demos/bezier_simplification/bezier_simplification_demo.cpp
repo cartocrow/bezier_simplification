@@ -7,7 +7,7 @@
 #include <QCheckBox>
 #include <QLabel>
 
-#include "read_ipe_bezier_spline.h"
+#include "../read_ipe_bezier_spline.h"
 
 Point<Inexact> nearest(const Segment<Inexact> seg, const Point<Inexact>& q)
 {
@@ -54,7 +54,7 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
     auto* redoButton = new QPushButton("Redo");
     vLayout->addWidget(redoButton);
 
-	auto splines = ipeSplinesToIsolines("splines.ipe");
+	auto splines = ipeSplinesToIsolines("cleaned.ipe");
 
     for (const auto& spline : splines) {
         auto lastV = m_baseGraph.insert_vertex(spline.curves()[0].source());

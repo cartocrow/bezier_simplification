@@ -1,6 +1,7 @@
 #pragma once
 
 #include "bezier_collapse.h"
+#include "fit_cubic.h"
 
 #include <cartocrow/core/arrangement_helpers.h>
 
@@ -64,9 +65,18 @@ template <typename BG> struct StevenBCTraits {
 			CubicBezierSpline firstPart;
 			firstPart.appendCurve(c0);
 			firstPart.appendCurve(c11);
+            auto firstPartPl = firstPart.polyline(nSegs);
+            std::vector<Point<Inexact>> firstPartPts(firstPartPl.vertices_begin(), firstPartPl.vertices_end());
 			CubicBezierSpline secondPart;
 			secondPart.appendCurve(c12);
 			secondPart.appendCurve(c2);
+            auto secondPartPl = secondPart.polyline(nSegs);
+            std::vector<Point<Inexact>> secondPartPts(secondPartPl.vertices_begin(), secondPartPl.vertices_end());
+
+            auto firstPartFit = fitCurve(firstPartPts, c0.sourceControl() - p0, -v);
+            auto secondPartFit = fitCurve(secondPartPts, v, c2.targetControl() - p6);
+            p1 = firstPartFit.sourceControl();
+            p5 = secondPartFit.targetControl();
 
 			auto a0 = -firstPart.signedArea();
 			auto a1 = -secondPart.signedArea();
@@ -75,7 +85,7 @@ template <typename BG> struct StevenBCTraits {
 
 			auto v0 = p1 - p0;
 			auto t00 = v0.direction();
-			auto d00 = sqrt(v0.squared_length()) * (1 + length(c11.polyline(nSegs)) / c1L);
+			auto d00 = sqrt(v0.squared_length());// * (1 + length(c11.polyline(nSegs)) / c1L);
 			auto t01Wrong = (-v).direction();
 			Direction<Inexact> t01(-t01Wrong.dx(), t01Wrong.dy());
 			auto d01 = getAreaD1(a0, p0, t00, d00, t01, p3);
@@ -84,7 +94,7 @@ template <typename BG> struct StevenBCTraits {
 			auto v1 = p6 - p5;
 			auto t11Wrong = v1.direction();
 			Direction<Inexact> t11(t11Wrong.dx(), -t11Wrong.dy());
-			auto d11 = sqrt(v1.squared_length()) * (1 + length(c12.polyline(20)) / c1L);
+			auto d11 = sqrt(v1.squared_length());// * (1 + length(c12.polyline(20)) / c1L);
 			auto t10 = v.direction();
 			auto d10 = getAreaD0(a1, p3, t10, t11, d11, p6);
 			auto c1_ = createCubicBezierFromPolar(p3, t10, d10, t11, d11, p6);
@@ -142,7 +152,7 @@ template <typename BG> struct StevenBCTraits {
 				best = {c0_, c1_};
 			}
 
-			if (debug && err < std::numeric_limits<double>::infinity()) {
+			if (debug) { //&& err < std::numeric_limits<double>::infinity()) {
 				ipeRenderer.addPainting([beforeSpline](renderer::GeometryRenderer& renderer) {
 					renderer.setMode(renderer::GeometryRenderer::vertices | renderer::GeometryRenderer::stroke);
 					renderer.setStroke(Color(200, 200, 200), 3.0);
@@ -153,6 +163,13 @@ template <typename BG> struct StevenBCTraits {
 					renderer.draw(afterSpline);
 					renderer.drawText({0, 0}, std::to_string(err));
 				}, "After");
+                ipeRenderer.addPainting([firstPartFit, secondPartFit, firstPartPl, secondPartPl](renderer::GeometryRenderer& renderer) {
+                    renderer.setStroke(Color(50, 50, 200), 3.0);
+                    renderer.draw(firstPartPl);
+                    renderer.draw(secondPartPl);
+                    renderer.draw(firstPartFit);
+                    renderer.draw(secondPartFit);
+                }, "Info");
 				ipeRenderer.nextPage();
 			}
 		}

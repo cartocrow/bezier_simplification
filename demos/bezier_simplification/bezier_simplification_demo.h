@@ -1,9 +1,9 @@
 #pragma once
 
 #include <cartocrow/renderer/geometry_widget.h>
-#include "../library/bezier_graph.h"
-#include "../library/bezier_collapse.h"
-#include "../library/steven_bezier_collapse.h"
+#include "../../library/bezier_graph.h"
+#include "../../library/bezier_collapse.h"
+#include "../../library/steven_bezier_collapse.h"
 #include <QMainWindow>
 
 using namespace cartocrow;
@@ -27,5 +27,4 @@ class BezierSimplificationDemo : public QMainWindow {
 
   public:
 	BezierSimplificationDemo();
-    virtual ~BezierSimplificationDemo() {};
 };

@@ -1,16 +1,18 @@
 set(SOURCES
-        steven_bezier_collapse.cpp
+    steven_bezier_collapse.cpp
+    fit_cubic.cpp
 )
 set(HEADERS
-        bezier_graph.h
-        bezier_simplification_traits.h
-        common.h
-        curved_graph.h
-        curve_simplification_traits.h
-        indexed_priority_queue.h
-        steven_bezier_collapse.h
-        curved_graph_with_history.h
-        utils.h
+    bezier_graph.h
+    bezier_simplification_traits.h
+    common.h
+    curved_graph.h
+    curve_simplification_traits.h
+    indexed_priority_queue.h
+    steven_bezier_collapse.h
+    curved_graph_with_history.h
+    utils.h
+    fit_cubic.h
 )
 
 add_library(curved_simplification ${SOURCES})
