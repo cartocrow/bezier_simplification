@@ -1,24 +1,39 @@
 #pragma once
 
-#include <cartocrow/core/core.h>
+#include "graph_curve_traits_2.h"
 
-#include "utils.h"
+namespace utils {
+    template<typename T>
+    bool vectorRemove(T elt, std::vector<T>& vec) {
+        auto pos = std::find(vec.begin(), vec.end(), elt);
+        if (pos != vec.end()) {
+            vec.erase(pos);
+            return true;
+        }
+        else {
+            return false;
+        }
+    }
+}
 
-namespace cartocrow::curved_simplification {
-template <class VD, class ED, class CST> class CurvedGraphVertex;
-template <class VD, class ED, class CST> class CurvedGraphEdge;
+namespace cartocrow {
+template <class VertexData, class EdgeData, GraphCurveTraits_2 CurveTraits> class Graph_2_vertex;
+template <class VertexData, class EdgeData, GraphCurveTraits_2 CurveTraits> class Graph_2_edge;
 
-template <class VD, class ED, class CST>
-class CurvedGraph {
-	friend class CurvedGraphVertex<VD, ED, CST>;
-	friend class CurvedGraphEdge<VD, ED, CST>;
+template <class VertexData, class EdgeData, GraphCurveTraits_2 CurveTraits>
+class Graph_2 {
+	friend class Graph_2_vertex<VertexData, EdgeData, CurveTraits>;
+	friend class Graph_2_edge<VertexData, EdgeData, CurveTraits>;
 
   public:
-	using Vertex = CurvedGraphVertex<VD, ED, CST>;
-	using Edge = CurvedGraphEdge<VD, ED, CST>;
-	using Pt = CST::Pt;
-    using Curve = CST::Curve;
-    using EdgeData = ED;
+	using Vertex = Graph_2_vertex<VertexData, EdgeData, CurveTraits>;
+	using Edge = Graph_2_edge<VertexData, EdgeData, CurveTraits>;
+	using Point_2 = CurveTraits::Point_2;
+    using Curve_2 = CurveTraits::Curve_2;
+    using Vertex_data = VertexData;
+    using Edge_data = EdgeData;
+    using Curve_traits = CurveTraits;
+    using Kernel = Curve_traits::Kernel;
 
   private:
 	using Vertex_container = std::list<Vertex>;
@@ -26,16 +41,16 @@ class CurvedGraph {
 	Vertex_container m_vertices;
 	Edge_container m_edges;
 	bool m_oriented = false;
-	size_t m_num_edges = 0;
+    bool m_sorted = false;
 
   public:
-	using Vertex_iterator = std::list<Vertex>::iterator;
-	using Edge_iterator = std::list<Edge>::iterator;
-	using Vertex_const_iterator = std::list<Vertex>::const_iterator;
-	using Edge_const_iterator = std::list<Edge>::const_iterator;
-	using Vertex_handle = std::list<Vertex>::iterator;
-	using Edge_handle = std::list<Edge>::iterator;
-	using Vertex_const_handle = Vertex_const_iterator;
+	using Vertex_iterator = Vertex_container::iterator;
+    using Vertex_const_iterator = Vertex_container::const_iterator;
+    using Vertex_handle = Vertex_iterator;
+    using Vertex_const_handle = Vertex_const_iterator;
+	using Edge_iterator = Edge_container::iterator;
+	using Edge_const_iterator = Edge_container::const_iterator;
+	using Edge_handle = Edge_iterator;
 	using Edge_const_handle = Edge_const_iterator;
 
 	Vertex_iterator vertices_begin() { return m_vertices.begin(); }
@@ -48,11 +63,19 @@ class CurvedGraph {
 	Edge_const_iterator edges_begin() const { return m_edges.cbegin(); }
 	Edge_const_iterator edges_end() const { return m_edges.cend(); }
 
-	size_t num_edges() {
-		return m_num_edges;
+    size_t number_of_vertices() {
+        return m_vertices.size();
+    }
+	size_t number_of_edges() {
+        return m_edges.size();
 	}
-
-	Vertex_handle insert_vertex(Pt p) {
+    void clear() {
+        m_vertices.clear();
+        m_edges.clear();
+        m_oriented = false;
+        m_sorted = false;
+    }
+	Vertex_handle insert_vertex(Point_2 p) {
 		Vertex& v = m_vertices.emplace_back();
 		v.m_point = std::move(p);
 		return (--m_vertices.end());
@@ -60,7 +83,7 @@ class CurvedGraph {
 	void remove_vertex(Vertex_handle v) {
 		m_vertices.erase(v);
 	}
-	Edge_handle add_edge(Vertex_handle source, Vertex_handle target, Curve curve) {
+	Edge_handle add_edge(Vertex_handle source, Vertex_handle target, const Curve_2& curve) {
 		Edge& e = m_edges.emplace_back(std::move(source), std::move(target), std::move(curve));
 		Edge_handle eh = --m_edges.end();
 		Vertex_handle es = e.m_source;
@@ -76,7 +99,6 @@ class CurvedGraph {
 			etInc.push_back(etInc.front());
 			etInc[0] = eh;
 		}
-		++m_num_edges;
 		return eh;
 	}
 	void remove_edge(Edge_handle edge) {
@@ -85,11 +107,10 @@ class CurvedGraph {
 		utils::vectorRemove(edge, sInc);
 		utils::vectorRemove(edge, tInc);
 		m_edges.erase(edge);
-		--m_num_edges;
 	}
     /// Split a vertex into two. Or equivalently, replace two curves by three new ones.
     /// Connect the two new vertices with three new curves.
-    Edge_handle split_vertex(Vertex_handle v, Curve c0, Curve c1, Curve c2) {
+    Edge_handle split_vertex(Vertex_handle v, Curve_2 c0, Curve_2 c1, Curve_2 c2) {
         assert(c0.target() == c1.source());
         assert(c1.target() == c2.source());
 
@@ -111,7 +132,7 @@ class CurvedGraph {
     /// Collapse an edge, removing it together with the edge that comes before and after it.
     /// Replace it with a vertex connected by two new curves.
     /// This is equivalent to replacing three curves by two new ones.
-    Vertex_handle collapse_edge(Edge_handle e, Curve toNewPoint, Curve fromNewPoint) {
+    Vertex_handle collapse_edge(Edge_handle e, Curve_2 toNewPoint, Curve_2 fromNewPoint) {
         assert(toNewPoint.target() == fromNewPoint.source());
         Edge_handle prev = e->prev();
         Edge_handle next = e->next();
@@ -137,6 +158,9 @@ class CurvedGraph {
 
         return v;
     }
+    /// <summary>
+    /// Ensures that all degree-2 vertices v have edge(0) = (u,v) and edge(1) = (v,w).
+    /// </summary>
 	void orient() {
 		for (Vertex_handle v = m_vertices.begin(); v != m_vertices.end(); ++v) {
 			if (v->degree() != 2) continue; // irrelevant for orientation
@@ -187,7 +211,7 @@ class CurvedGraph {
 
 		m_oriented = true;
 	}
-	bool verifyOriented() {
+	bool verify_oriented() {
 		for (Vertex_handle v = m_vertices.begin(); v != m_vertices.end(); ++v) {
 			if (v->degree() != 2) continue; // irrelevant for orientation
 
@@ -201,28 +225,66 @@ class CurvedGraph {
 
 		return true;
 	}
+    bool is_oriented() {
+        assert(!m_oriented || verify_oriented());
+        return m_oriented;
+    }
+    void sort_incident_edges() {
+        for (Vertex_handle& v : m_vertices) {
+            if (v->degree() > 2) {
+                std::ranges::sort(v->incident, [&v](Edge* e, Edge* f) {
+                    CGAL::Direction_2<Kernel> dir_e = CGAL::Direction_2<Kernel>(e->other(v)->getPoint() - v->getPoint());
+                    CGAL::Direction_2<Kernel> dir_f = CGAL::Direction_2<Kernel>(f->other(v)->getPoint() - v->getPoint());
+                    return dir_e < dir_f;
+                });
+            }
+        }
+        m_sorted = true;
+    }
+    bool verify_sorted() {
+        for (const Vertex_const_handle& v : m_vertices) {
+            if (v->degree() > 2) {
+                CGAL::Direction_2<Kernel> dir_prev = CGAL::Direction_2<Kernel>(v->neighbor(0)->getPoint() - v->getPoint());
+                for (int i = 1; i < v->degree(); i++) {
+                    CGAL::Direction_2<Kernel> dir = CGAL::Direction_2<Kernel>(v->neighbor(i)->getPoint() - v->getPoint());
+                    if (dir < dir_prev) {
+                        return false;
+                    }
+                    dir_prev = dir;
+                }
+            }
+        }
+        return true;
+    }
+    bool is_sorted() {
+        assert(!m_sorted || verify_sorted());
+        return m_sorted;
+    }
 };
 
-template <class VD, class ED, class CST>
-class CurvedGraphVertex {
-	friend class CurvedGraph<VD, ED, CST>;
-	friend class CurvedGraphEdge<VD, ED, CST>;
+template <class VertexData, class EdgeData, GraphCurveTraits_2 CurveTraits>
+class Graph_2_vertex {
+	friend class Graph_2<VertexData, EdgeData, CurveTraits>;
+	friend class Graph_2_edge<VertexData, EdgeData, CurveTraits>;
 
   public:
-	using Vertex = CurvedGraphVertex<VD, ED, CST>;
-	using Edge = CurvedGraphEdge<VD, ED, CST>;
-	using Graph = CurvedGraph<VD, ED, CST>;
+	using Vertex = Graph_2_vertex<VertexData, EdgeData, CurveTraits>;
+	using Edge = Graph_2_edge<VertexData, EdgeData, CurveTraits>;
+	using Graph = Graph_2<VertexData, EdgeData, CurveTraits>;
 	using Vertex_handle = Graph::Vertex_handle;
 	using Edge_handle = Graph::Edge_handle;
-	using Pt = CST::Pt;
+	using Point_2 = CurveTraits::Point_2;
+    using Vertex_data = VertexData;
+    using Edge_data = EdgeData;
+    using Curve_traits = CurveTraits;
 
   private:
 	using Edge_container = std::vector<Edge_handle>;
-	Pt m_point;
+	Point_2 m_point;
 	Edge_container m_incident = Edge_container();
 
   public:
-	const Pt& point() const {
+	const Point_2& point() const {
 		return m_point;
 	}
 	int degree() {
@@ -244,46 +306,49 @@ class CurvedGraphVertex {
 	}
 };
 
-template <class VD, class ED, class CST>
-class CurvedGraphEdge {
-	friend class CurvedGraph<VD, ED, CST>;
-	friend class CurvedGraphVertex<VD, ED, CST>;
+template <class VertexData, class EdgeData, GraphCurveTraits_2 CurveTraits>
+class Graph_2_edge {
+	friend class Graph_2<VertexData, EdgeData, CurveTraits>;
+	friend class Graph_2_vertex<VertexData, EdgeData, CurveTraits>;
 
   public:
-	using Vertex = CurvedGraphVertex<VD, ED, CST>;
-	using Edge = CurvedGraphEdge<VD, ED, CST>;
-	using Graph = CurvedGraph<VD, ED, CST>;
+	using Vertex = Graph_2_vertex<VertexData, EdgeData, CurveTraits>;
+	using Edge = Graph_2_edge<VertexData, EdgeData, CurveTraits>;
+	using Graph = Graph_2<VertexData, EdgeData, CurveTraits>;
 	using Vertex_handle = Graph::Vertex_handle;
 	using Vertex_const_handle = Graph::Vertex_const_handle;
 	using Edge_handle = Graph::Edge_handle;
 	using Edge_const_handle = Graph::Edge_const_handle;
-	using Pt = CST::Pt;
-	using Curve = CST::Curve;
+	using Point_2 = CurveTraits::Point_2;
+	using Curve_2 = CurveTraits::Curve_2;
+    using Vertex_data = VertexData;
+    using Edge_data = EdgeData;
+    using Curve_traits = CurveTraits;
 
   private:
 	Vertex_handle m_source;
 	Vertex_handle m_target;
-	Curve m_curve;
-	ED m_d;
+	Curve_2 m_curve;
+	EdgeData m_d;
 
   public:
-	CurvedGraphEdge(Vertex_handle source, Vertex_handle target, Curve curve)
+	Graph_2_edge(Vertex_handle source, Vertex_handle target, Curve_2 curve)
 		: m_source(std::move(source)), m_target(std::move(target)), m_curve(std::move(curve)) {
 	    assert(m_curve.source() == m_source->m_point);
 		assert(m_curve.target() == m_target->m_point);
 	};
 
-	CurvedGraphEdge(Vertex_handle source, Vertex_handle target, Curve curve, ED d)
+	Graph_2_edge(Vertex_handle source, Vertex_handle target, Curve_2 curve, Edge_data d)
 	    : m_source(std::move(source)), m_target(std::move(target)), m_curve(std::move(curve)), m_d(std::move(d)) {};
 
 	Vertex_handle source() { return m_source; }
 	Vertex_handle target() { return m_target; }
 	Vertex_const_handle source() const { return m_source; }
 	Vertex_const_handle target() const { return m_target; }
-	const Curve& curve() const { return m_curve; }
+	const Curve_2& curve() const { return m_curve; }
 	void reverse() {
 		std::swap(m_source, m_target);
-		m_curve.reverse();
+		m_curve = Curve_traits::reversed(m_curve);
 	}
 	Edge_handle prev() {
 		return m_source->incoming();
@@ -291,7 +356,7 @@ class CurvedGraphEdge {
 	Edge_handle next() {
 		return m_target->outgoing();
 	}
-	ED& data() {
+	Edge_data& data() {
 		return m_d;
 	}
 };

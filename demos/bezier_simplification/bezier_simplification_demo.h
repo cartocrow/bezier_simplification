@@ -1,10 +1,12 @@
 #pragma once
 
 #include <cartocrow/renderer/geometry_widget.h>
-#include "../../library/bezier_graph.h"
+#include "../../library/core/bezier_graph_2.h"
 #include "../../library/bezier_collapse.h"
 #include "../../library/steven_bezier_collapse.h"
 #include <QMainWindow>
+
+#include <filesystem>
 
 using namespace cartocrow;
 using namespace cartocrow::renderer;
@@ -24,6 +26,9 @@ class BezierSimplificationDemo : public QMainWindow {
     Graph m_graph;
 	Collapse m_collapse;
     std::optional<Edge_handle> m_debugEdge;
+    std::vector<CubicBezierSpline> m_splines;
+
+    void loadInput(const std::filesystem::path& path);
 
   public:
 	BezierSimplificationDemo();

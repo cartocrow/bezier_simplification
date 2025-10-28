@@ -1,10 +1,12 @@
 #pragma once
 
 #include <cartocrow/core/core.h>
-#include "bezier_graph.h"
+#include "core/bezier_graph_2.h"
 #include "common.h"
 #include "indexed_priority_queue.h"
 #include "curved_graph_with_history.h"
+
+#include <future>
 
 namespace cartocrow::curved_simplification {
 namespace detail {
@@ -26,9 +28,9 @@ concept BCSetup = requires(typename BG::Edge_handle e) {
 };
 struct ECData;
 struct HECData;
-using HECGraph = BezierGraph<std::monostate, HECData>;
-using BezierCollapseGraph = BezierGraph<std::monostate, ECData>;
-using BezierCollapseGraphWithHistory = CurvedGraphWithHistoryAdaptor<HECGraph>;
+using HECGraph = Bezier_graph_2<std::monostate, HECData>;
+using BezierCollapseGraph = Bezier_graph_2<std::monostate, ECData>;
+using BezierCollapseGraphWithHistory = CollapseHistoryGraphAdaptor<HECGraph>;
 
 struct ECBase {
     std::optional<Collapse> collapse;
@@ -55,8 +57,11 @@ class BezierCollapse {
 	using Edge_handle = BG::Edge_handle;
 	BG& m_g;
 	BCT m_traits;
-	IndexedPriorityQueue<GraphQueueTraits<Edge_handle, Inexact>> m_q;
 
+  public:
+    IndexedPriorityQueue<GraphQueueTraits<Edge_handle, Inexact>> m_q;
+
+  private:
 	void update(Edge_handle e) {
 		m_traits.determineCollapse(e);
 		if (m_q.contains(e)) {
@@ -70,12 +75,21 @@ class BezierCollapse {
 	/// Traits are passed as an object to allow the user to specify parameters.
 	BezierCollapse(BG& graph, BCT traits) : m_g(graph), m_traits(std::move(traits)) {};
 	void initialize() {
-		for (auto eit = m_g.edges_begin(); eit != m_g.edges_end(); ++eit) {
-			update(eit);
-		}
+        m_q = {};
+        std::vector<std::future<void>> futures;
+
+        for (auto eit = m_g.edges_begin(); eit != m_g.edges_end(); ++eit) {
+            futures.emplace_back(std::async(std::launch::async, [eit, this]() {
+                m_traits.determineCollapse(eit);
+            }));
+        }
+
+        for (auto& f : futures) f.get();
+        for (auto eit = m_g.edges_begin(); eit != m_g.edges_end(); ++eit) {
+            m_q.push(eit);
+        }
 	}
 	bool step() {
-
 		while (!m_q.empty()) {
 			Edge_handle e = m_q.pop();
 			auto& edata = e->data();
@@ -109,9 +123,9 @@ class BezierCollapse {
 		return false;
 	}
 	bool runToComplexity(int k) {
-		while (m_g.num_edges() > k) {
-            if (m_g.num_edges() % 1000 == 0) {
-                std::cout << m_g.num_edges() << "\n";
+		while (m_g.number_of_edges() > k) {
+            if (m_g.number_of_edges() % 1000 == 0) {
+                std::cout << m_g.number_of_edges() << "\n";
             }
 			if (!step()) {
 				return false;

@@ -31,63 +31,56 @@ std::vector<CubicBezierSpline> splinesInPage(ipe::Page* page) {
 		for (int j = 0; j < shape.countSubPaths(); j++) {
 			auto subpath = shape.subPath(j);
 			if (subpath->type() != ipe::SubPath::Type::ECurve) continue;
-			splines.emplace_back(customConvertPathToSpline(*subpath, matrix));
+			splines.emplace_back(convertPathToSpline(*subpath, matrix));
 		}
 	}
 
 	return splines;
 }
 
-CubicBezierSpline customConvertPathToSpline(const ipe::SubPath& path, const ipe::Matrix& matrix) {
+
+CubicBezierSpline convertPathToSpline(const ipe::SubPath& path, const ipe::Matrix& matrix) {
     CubicBezierSpline spline;
     if (path.type() == ipe::SubPath::EClosedSpline) {
         std::vector<ipe::Bezier> beziers;
         path.asClosedSpline()->beziers(beziers);
         for (auto bezier : beziers) {
+            ipe::Vector v0 = matrix * bezier.iV[0];
+            ipe::Vector v1 = matrix * bezier.iV[1];;
+            ipe::Vector v2 = matrix * bezier.iV[2];
+            ipe::Vector v3 = matrix * bezier.iV[3];
             spline.appendCurve(
-                    Point<Inexact>(bezier.iV[0].x, bezier.iV[0].y), Point<Inexact>(bezier.iV[1].x, bezier.iV[1].y),
-                    Point<Inexact>(bezier.iV[2].x, bezier.iV[2].y), Point<Inexact>(bezier.iV[3].x, bezier.iV[3].y));
+                    Point<Inexact>(v0.x, v0.y), Point<Inexact>(v1.x, v1.y),
+                    Point<Inexact>(v2.x, v2.y), Point<Inexact>(v3.x, v3.y));
         }
     } else if (path.type() == ipe::SubPath::ECurve) {
-        std::vector<ipe::Bezier> bzs;
-
         const ipe::Curve* curve = path.asCurve();
 
-        if (curve->segment(0).type() == ipe::CurveSegment::ESegment) {
-            std::vector<ipe::Vector> vs(curve->countSegments() + 1);
-            for (int i = 0; i < curve->countSegments(); ++i) {
-                vs[i] = curve->segment(i).cp(0);
-            }
-            vs[curve->countSegments()] = curve->segment(curve->countSegments() - 1).cp(1);
-
-            std::vector<ipe::Vector> toRemove;
-            for (int i = 1; i < curve->countSegments() - 2; ++i) {
-                auto p0 = vs[i-1];
-                auto p1 = vs[i];
-                auto p2 = vs[i+1];
-                auto p3 = vs[i+2];
-                if ((p2-p1).len() / ((p1-p0).len() + (p3-p2).len()) < 1.0 / 10.0) {
-                    // remove p1 or p2
-                    toRemove.push_back(p1);
-                }
-            }
-            auto rit = std::remove_if(vs.begin(), vs.end(), [&toRemove](const auto& v) { return std::find(toRemove.begin(), toRemove.end(), v) != toRemove.end(); });
-            vs.erase(rit, vs.end());
-
-            ipe::Bezier::cardinalSpline(vs.size(), &vs[0], 0.5, bzs);
-        } else {
-            for (int i = 0; i < curve->countSegments(); ++i) {
-                curve->segment(i).beziers(bzs);
-            }
-        }
-
-        for (const auto& bz : bzs) {
-            spline.appendCurve(
-                    Point<Inexact>(bz.iV[0].x, bz.iV[0].y), Point<Inexact>(bz.iV[1].x, bz.iV[1].y),
-                    Point<Inexact>(bz.iV[2].x, bz.iV[2].y), Point<Inexact>(bz.iV[3].x, bz.iV[3].y));
+        for (int i = 0; i < curve->countSegments(); ++i) {
+            ipe::CurveSegment seg = curve->segment(i);
+            addCurveSegmentToSpline(seg, spline, matrix);
         }
     } else {
         throw std::runtime_error("Ipe SubPath is neither a ClosedSpline nor a Curve.");
     }
     return spline;
+}
+
+void addCurveSegmentToSpline(const ipe::CurveSegment& seg, CubicBezierSpline& spline, const ipe::Matrix& matrix) {
+    if (seg.type() == ipe::CurveSegment::ESegment) {
+        spline.appendCurve(ipeVectorToPoint(matrix * seg.cp(0)), ipeVectorToPoint(matrix * seg.cp(1)));
+    } else {
+        std::vector<ipe::Bezier> bzs;
+        seg.beziers(bzs);
+        for (const auto& bz : bzs) {
+            spline.appendCurve(ipeVectorToPoint(matrix * bz.iV[0]),
+                               ipeVectorToPoint(matrix * bz.iV[1]),
+                               ipeVectorToPoint(matrix * bz.iV[2]),
+                               ipeVectorToPoint(matrix * bz.iV[3]));
+        }
+    }
+}
+
+Point<Inexact> ipeVectorToPoint(const ipe::Vector& v) {
+    return {v.x, v.y};
 }

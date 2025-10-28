@@ -3,15 +3,16 @@ set(SOURCES
     fit_cubic.cpp
 )
 set(HEADERS
-    bezier_graph.h
-    bezier_simplification_traits.h
     common.h
-    curved_graph.h
-    curve_simplification_traits.h
+    core/bezier_graph_2.h
+    core/graph_2.h
+    core/graph_bezier_curve_traits_2.h
+    core/graph_segment_traits_2.h
+    core/graph_curve_traits_2.h
+    core/graph_2_like.h
     indexed_priority_queue.h
     steven_bezier_collapse.h
     curved_graph_with_history.h
-    utils.h
     fit_cubic.h
 )
 

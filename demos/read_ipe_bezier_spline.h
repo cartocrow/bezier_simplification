@@ -13,6 +13,8 @@ using namespace cartocrow;
 
 std::vector<CubicBezierSpline> ipeSplinesToIsolines(const std::filesystem::path& file);
 std::vector<CubicBezierSpline> splinesInPage(ipe::Page* page);
-CubicBezierSpline customConvertPathToSpline(const ipe::SubPath& path, const ipe::Matrix& matrix);
-
+CubicBezierSpline convertPathToSpline(const ipe::SubPath& path, const ipe::Matrix& matrix);
+Point<Inexact> ipeVectorToPoint(const ipe::Vector& v);
+/// Precondition: the CurveSegment is not of type EArc
+void addCurveSegmentToSpline(const ipe::CurveSegment& seg, CubicBezierSpline& spline, const ipe::Matrix& matrix);
 #endif //CARTOCROW_READIPEBEZIERSPLINE_H

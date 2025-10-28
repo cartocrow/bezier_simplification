@@ -15,13 +15,17 @@ CubicBezierCurve
 createCubicBezierFromPolar(Point<Inexact> p0, Direction<Inexact> t0Dir, Number<Inexact> d0,
 						   Direction<Inexact> t1Dir, Number<Inexact> d1, Point<Inexact> p3);
 Number<Inexact> length(const Polyline<Inexact>& pl);
+bool isStraight(const CubicBezierCurve& curve);
+// Whether curve c1 connects smoothly to curve c2: whether the end tangent of c1 aligns approximately with the
+// start tangents of c2
+bool connectsSmoothlyTo(const CubicBezierCurve& c1, const CubicBezierCurve& c2);
 
 template <typename BG> struct StevenBCTraits {
 	int tSteps;
 	int nSegs;
 	bool debug;
 
-	StevenBCTraits(int tSteps = 10,	int nSegs = 20, bool debug=false) :
+	StevenBCTraits(bool debug = false, int tSteps = 10,	int nSegs = 100) :
 	      tSteps(tSteps), nSegs(nSegs), debug(debug) {};
 
 	void determineCollapse(typename BG::Edge_handle e) {
@@ -89,21 +93,41 @@ template <typename BG> struct StevenBCTraits {
 			auto a0 = -firstPart.signedArea();
 			auto a1 = -secondPart.signedArea();
 
-			auto v0 = p1 - p0;
-			auto t00 = v0.direction();
-			auto d00 = sqrt(v0.squared_length());
-			auto t01Wrong = (-v).direction();
-			Direction<Inexact> t01(-t01Wrong.dx(), t01Wrong.dy());
-			auto d01 = getAreaD1(a0, p0, t00, d00, t01, p3);
-			auto c0_ = createCubicBezierFromPolar(p0, t00, d00, t01, d01, p3);
+            std::optional<CubicBezierCurve> c0_maybe;
+            if (a0 == 0) {
+                c0_maybe = CubicBezierCurve(p0, p3);
+            } else {
+                auto v0 = p1 - p0;
+                auto t00 = v0.direction();
+                auto d00 = sqrt(v0.squared_length());
+                auto t01Wrong = (-v).direction();
+                Direction<Inexact> t01(-t01Wrong.dx(), t01Wrong.dy());
+                auto d01 = getAreaD1(a0, p0, t00, d00, t01, p3);
+                if (d01 > 0) {
+                    c0_maybe = createCubicBezierFromPolar(p0, t00, d00, t01, d01, p3);
+                }
+            }
 
-			auto v1 = p6 - p5;
-			auto t11Wrong = v1.direction();
-			Direction<Inexact> t11(t11Wrong.dx(), -t11Wrong.dy());
-			auto d11 = sqrt(v1.squared_length());
-			auto t10 = v.direction();
-			auto d10 = getAreaD0(a1, p3, t10, t11, d11, p6);
-			auto c1_ = createCubicBezierFromPolar(p3, t10, d10, t11, d11, p6);
+            if (!c0_maybe.has_value()) continue;
+
+            std::optional<CubicBezierCurve> c1_maybe;
+            if (a1 == 0) {
+                c1_maybe = CubicBezierCurve(p3, p6);
+            } else {
+                auto v1 = p6 - p5;
+                auto t11Wrong = v1.direction();
+                Direction<Inexact> t11(t11Wrong.dx(), -t11Wrong.dy());
+                auto d11 = sqrt(v1.squared_length());
+                auto t10 = v.direction();
+                auto d10 = getAreaD0(a1, p3, t10, t11, d11, p6);
+                if (d10 > 0) {
+                    c1_maybe = createCubicBezierFromPolar(p3, t10, d10, t11, d11, p6);
+                }
+            }
+
+            if (!c1_maybe.has_value()) continue;
+            auto& c0_ = *c0_maybe;
+            auto& c1_ = *c1_maybe;
 
 			CubicBezierSpline afterSpline;
 			afterSpline.appendCurve(c0_);
@@ -114,14 +138,16 @@ template <typename BG> struct StevenBCTraits {
 			double maxKappaBefore = 0;
 			for (int i = 0; i <= nSegs; ++i) {
 				double ti = static_cast<double>(i) / nSegs;
-				double kappa = std::max(abs(c0_.curvature(ti)), abs(c1_.curvature(ti)));
+				double kappa = std::max(std::max(abs(c0.curvature(ti)), abs(c1.curvature(ti))), abs(c2.curvature(ti)));
 				if (kappa > maxKappaBefore) {
 					maxKappaBefore = kappa;
 				}
 			}
 
 			double maxKappaAfter = 0;
-			for (int i = 0; i <= nSegs; ++i) {
+            // Ignore start and end curvature
+			for (int i = nSegs/10; i <= 9 * nSegs / 10; ++i) {
+//			for (int i = 0; i <= nSegs; ++i) {
 				double ti = static_cast<double>(i) / nSegs;
 				double kappa = std::max(abs(c0_.curvature(ti)), abs(c1_.curvature(ti)));
 				if (kappa > maxKappaAfter) {
@@ -129,8 +155,10 @@ template <typename BG> struct StevenBCTraits {
 				}
 			}
 
-			double err = 0;
-			if (d01 > 0 && d10 > 0 && !CGAL::do_curves_intersect(afterPlE.edges_begin(), afterPlE.edges_end())) {
+			double err, symDiffErr, curvatureErr = 0;
+            bool createsSmoothConnection = false;
+            createsSmoothConnection = !connectsSmoothlyTo(c0, c1) && !connectsSmoothlyTo(c1, c2) && connectsSmoothlyTo(c0_, c1_);
+			if ((createsSmoothConnection || maxKappaAfter < maxKappaBefore) && !CGAL::do_curves_intersect(afterPlE.edges_begin(), afterPlE.edges_end())) {
 				Arrangement<Exact> arr;
 				std::vector<Arrangement<Exact>::X_monotone_curve_2> beforePlXMCurves;
 				for (auto eit = beforePl.edges_begin(); eit != beforePl.edges_end(); ++eit) {
@@ -139,16 +167,29 @@ template <typename BG> struct StevenBCTraits {
 				// todo use insert_non_intersecting_curves once it is guaranteed that the input curve is planar
 				CGAL::insert(arr, beforePlXMCurves.begin(), beforePlXMCurves.end());
 				CGAL::insert(arr, afterPlE.edges_begin(), afterPlE.edges_end());
+                symDiffErr = 0;
 				for (auto fit = arr.faces_begin(); fit != arr.faces_end(); ++fit) {
 					if (fit->is_unbounded()) continue;
 					auto pwh = approximate(face_to_polygon_with_holes<Exact>(fit));
-					err += abs(pwh.outer_boundary().area());
+					symDiffErr += abs(pwh.outer_boundary().area());
 					for (const auto& h : pwh.holes()) {
-						err -= abs(h.area());
+						symDiffErr -= abs(h.area());
 					}
 				}
 
-				err = sqrt(err) + (maxKappaAfter - maxKappaBefore);
+//                curvatureErr = - maxKappaBefore / maxKappaAfter;
+                if (isStraight(c0) || isStraight(c1) || isStraight(c2)) {
+                    curvatureErr = 0;
+                }
+                if (debug) {
+                    std::cerr << "Sym diff err (sqrt): " << sqrt(symDiffErr) << "\n";
+                    std::cerr << "Curvature err: " << curvatureErr << "; before: " << maxKappaBefore << "; after: " << maxKappaAfter << "\n";
+                }
+				err = sqrt(symDiffErr);// + 5 * curvatureErr;
+
+                if (createsSmoothConnection) {
+                    err /= 10;
+                }
 			} else {
 				err = std::numeric_limits<double>::infinity();
 			}
@@ -164,10 +205,16 @@ template <typename BG> struct StevenBCTraits {
 					renderer.setStroke(Color(200, 200, 200), 3.0);
 					renderer.draw(beforeSpline);
 				}, "Before");
-				ipeRenderer.addPainting([afterSpline, err](renderer::GeometryRenderer& renderer) {
+				ipeRenderer.addPainting([afterSpline, err, symDiffErr, curvatureErr, createsSmoothConnection, maxKappaBefore, maxKappaAfter](renderer::GeometryRenderer& renderer) {
 					renderer.setStroke(Color(0, 0, 0), 3.0);
 					renderer.draw(afterSpline);
-					renderer.drawText({0, 0}, std::to_string(err));
+					renderer.drawText({10, 10}, "Err: " + std::to_string(err));
+                    renderer.drawText({10, 20}, "Sym diff err: " + std::to_string(sqrt(symDiffErr)));
+                    renderer.drawText({10, 30}, "Max. curvature before: " + std::to_string(maxKappaBefore));
+                    renderer.drawText({10, 40}, "Max. curvature after: " + std::to_string(maxKappaAfter));
+                    if (createsSmoothConnection) {
+                        renderer.drawText({10, 50}, "Creates smooth connection!");
+                    }
 				}, "After");
 				ipeRenderer.nextPage();
 			}

@@ -161,7 +161,7 @@ void fitCubicRecursive(const std::vector<Point<Inexact>>& pts, int first, int la
         outSpline.appendCurve(bez);
         return;
     }
-    for (int i=0;i<1000;++i) {
+    for (int i=0;i<10;++i) {
         auto uPrime = reparameterize(pts, first, last, u, bez);
         bez = generateBezier(pts, first, last, uPrime, tHat1, tHat2);
         maxError = computeMaxError(pts, first, last, bez, uPrime, splitPoint);
