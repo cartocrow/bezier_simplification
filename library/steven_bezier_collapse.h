@@ -146,8 +146,8 @@ template <typename BG> struct StevenBCTraits {
 
 			double maxKappaAfter = 0;
             // Ignore start and end curvature
-			for (int i = nSegs/10; i <= 9 * nSegs / 10; ++i) {
-//			for (int i = 0; i <= nSegs; ++i) {
+//			for (int i = nSegs/10; i <= 9 * nSegs / 10; ++i) {
+			for (int i = 0; i <= nSegs; ++i) {
 				double ti = static_cast<double>(i) / nSegs;
 				double kappa = std::max(abs(c0_.curvature(ti)), abs(c1_.curvature(ti)));
 				if (kappa > maxKappaAfter) {

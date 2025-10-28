@@ -114,7 +114,7 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
     auto* redoButton = new QPushButton("Redo");
     vLayout->addWidget(redoButton);
 
-	loadInput("cleaned_smaller.ipe");
+	loadInput("splines.ipe");
 
     auto* complexityLabel = new QLabel("#Edges: ");
     auto* complexity = new QSlider();
@@ -131,8 +131,12 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
 
     auto* showEdgeDirection = new QCheckBox("Show edge direction");
     vLayout->addWidget(showEdgeDirection);
-    auto* showVertices = new QCheckBox("Show vertices");
-    vLayout->addWidget(showVertices);
+    auto* showOldVertices = new QCheckBox("Show old vertices");
+    vLayout->addWidget(showOldVertices);
+    auto* showNewVertices = new QCheckBox("Show new vertices");
+    vLayout->addWidget(showNewVertices);
+    auto* showNewControlPoints = new QCheckBox("Show new control points");
+    vLayout->addWidget(showNewControlPoints);
     auto* showDebugInfo = new QCheckBox("Show debug info");
     vLayout->addWidget(showDebugInfo);
 
@@ -151,7 +155,13 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
     connect(showEdgeDirection, &QCheckBox::stateChanged, [this]() {
         m_renderer->repaint();
     });
-    connect(showVertices, &QCheckBox::stateChanged, [this]() {
+    connect(showOldVertices, &QCheckBox::stateChanged, [this]() {
+        m_renderer->repaint();
+    });
+    connect(showNewVertices, &QCheckBox::stateChanged, [this]() {
+        m_renderer->repaint();
+    });
+    connect(showNewControlPoints, &QCheckBox::stateChanged, [this]() {
         m_renderer->repaint();
     });
     connect(showDebugInfo, &QCheckBox::stateChanged, [this]() {
@@ -254,8 +264,8 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
         m_renderer->repaint();
     });
 
-	m_renderer->addPainting([showVertices, this](GeometryRenderer& renderer) {
-        if (showVertices->isChecked()) {
+	m_renderer->addPainting([showOldVertices, this](GeometryRenderer& renderer) {
+        if (showOldVertices->isChecked()) {
             renderer.setMode(GeometryRenderer::stroke | GeometryRenderer::vertices);
         } else {
             renderer.setMode(GeometryRenderer::stroke);
@@ -284,7 +294,7 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
 //        }
 //    }, "Curvature");
 
-	m_renderer->addPainting([this, showVertices, showEdgeDirection, showDebugInfo](GeometryRenderer& renderer) {
+	m_renderer->addPainting([this, showNewVertices, showNewControlPoints, showEdgeDirection, showDebugInfo](GeometryRenderer& renderer) {
 	  	renderer.setMode(GeometryRenderer::stroke);
 		renderer.setStroke(Color(0, 0, 0), 3.0);
 		for (auto eit = m_baseGraph.edges_begin(); eit != m_baseGraph.edges_end(); ++eit) {
@@ -299,12 +309,32 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
                 renderer.draw(eit->curve().split(0.25).first);
             }
 		}
-        if (showVertices->isChecked()) {
+        // Control polylines
+        for (auto eit = m_baseGraph.edges_begin(); eit != m_baseGraph.edges_end(); ++eit) {
+            if (showNewControlPoints->isChecked()) {
+                renderer.setStroke(Color(0, 255, 0), 1.0);
+                Polyline<Inexact> pl;
+                for (int c = 0; c < 4; ++c) pl.push_back(eit->curve().control(c));
+                renderer.draw(pl);
+            }
+        }
+        // Control points
+        for (auto eit = m_baseGraph.edges_begin(); eit != m_baseGraph.edges_end(); ++eit) {
+            if (showNewControlPoints->isChecked()) {
+                renderer.setStroke(Color(0, 0, 255), 3.0);
+                renderer.draw(eit->curve().sourceControl());
+                renderer.draw(eit->curve().targetControl());
+                renderer.setStroke(Color(255, 0, 255), 3.0);
+                renderer.draw(eit->curve().source());
+                renderer.draw(eit->curve().target());
+            }
+        }
+        if (showNewVertices->isChecked()) {
             for (auto vit = m_baseGraph.vertices_begin(); vit != m_baseGraph.vertices_end(); ++vit) {
                 renderer.draw(vit->point());
             }
         }
-	}, "Graph");
+	}, "Simplification");
 
     m_renderer->addPainting([this](GeometryRenderer& renderer) {
         if (!m_debugEdge.has_value()) return;
