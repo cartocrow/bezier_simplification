@@ -76,15 +76,15 @@ class BezierCollapse {
 	BezierCollapse(BG& graph, BCT traits) : m_g(graph), m_traits(std::move(traits)) {};
 	void initialize() {
         m_q = {};
-        std::vector<std::future<void>> futures;
+//        std::vector<std::future<void>> futures;
 
         for (auto eit = m_g.edges_begin(); eit != m_g.edges_end(); ++eit) {
-            futures.emplace_back(std::async(std::launch::async, [eit, this]() {
+//            futures.emplace_back(std::async(std::launch::async, [eit, this]() {
                 m_traits.determineCollapse(eit);
-            }));
+//            }));
         }
 
-        for (auto& f : futures) f.get();
+//        for (auto& f : futures) f.get();
         for (auto eit = m_g.edges_begin(); eit != m_g.edges_end(); ++eit) {
             m_q.push(eit);
         }

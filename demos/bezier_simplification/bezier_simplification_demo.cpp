@@ -5,31 +5,12 @@
 #include <QVBoxLayout>
 #include <QPushButton>
 #include <QCheckBox>
+#include <QSpinBox>
 #include <QLabel>
 #include <QScrollArea>
 #include <QFileDialog>
 
 #include "../read_ipe_bezier_spline.h"
-
-Point<Inexact> nearest(const Segment<Inexact> seg, const Point<Inexact>& q)
-{
-    const auto& a = seg.source();
-    const auto& b = seg.target();
-    auto ab = b - a;
-    auto aq = q - a;
-    auto ba = a - b;
-    auto bq = q - b;
-
-    if (ab * aq <= 0) {
-        return a;
-    }
-
-    if (ba * bq <= 0) {
-        return b;
-    }
-
-    return seg.supporting_line().projection(q);
-}
 
 void BezierSimplificationDemo::loadInput(const std::filesystem::path& path) {
     m_splines = ipeSplinesToIsolines(path);
@@ -61,7 +42,6 @@ void BezierSimplificationDemo::loadInput(const std::filesystem::path& path) {
 
     m_baseGraph.orient();
     m_collapse.initialize();
-//    m_collapse.runToComplexity(1);
 
     std::vector<Point<Inexact>> points;
     for (auto vit = m_baseGraph.vertices_begin(); vit != m_baseGraph.vertices_end(); ++vit) {
@@ -89,13 +69,6 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
     auto* loadFileButton = new QPushButton("Load file");
     vLayout->addWidget(loadFileButton);
 
-    connect(loadFileButton, &QPushButton::clicked, [this]() {
-        QString startDir = ".";
-        std::filesystem::path filePath = QFileDialog::getOpenFileName(this, tr("Select isolines"), startDir).toStdString();
-        if (filePath == "") return;
-        loadInput(filePath);
-    });
-
     auto* simplificationSettings = new QLabel("<h3>Simplification</h3>");
     vLayout->addWidget(simplificationSettings);
 
@@ -107,6 +80,11 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
 
     auto* step100Button = new QPushButton("Step (x100)");
     vLayout->addWidget(step100Button);
+
+    auto* runToComplexityButton = new QPushButton("Run to specified complexity");
+    vLayout->addWidget(runToComplexityButton);
+    auto* desiredComplexity = new QSpinBox();
+    vLayout->addWidget(desiredComplexity);
 
     auto* undoButton = new QPushButton("Undo");
     vLayout->addWidget(undoButton);
@@ -121,6 +99,9 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
     complexity->setMaximum(m_graph.number_of_edges());
     complexity->setMinimum(m_graph.number_of_edges());
     complexity->setValue(m_graph.number_of_edges());
+    desiredComplexity->setMinimum(1);
+    desiredComplexity->setMaximum(m_graph.number_of_edges());
+    desiredComplexity->setValue(1);
 
     complexity->setOrientation(Qt::Horizontal);
     vLayout->addWidget(complexityLabel);
@@ -172,16 +153,7 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
         double minDist2Edge = std::numeric_limits<double>::infinity();
         std::optional<Graph::Edge_handle> closest;
         for (auto eit = m_baseGraph.edges_begin(); eit != m_baseGraph.edges_end(); ++eit) {
-            // find approximate distance to eit->curve()
-            double minDist2 = std::numeric_limits<double>::infinity();
-            auto pl = eit->curve().polyline(10);
-            for (auto sit = pl.edges_begin(); sit != pl.edges_end(); ++sit) {
-                auto q = nearest(*sit, pt);
-                auto dist2 = CGAL::squared_distance(pt, q);
-                if (dist2 < minDist2) {
-                    minDist2 = dist2;
-                }
-            }
+            double minDist2 = CGAL::squared_distance(pt, eit->curve().nearest(pt).point);
             if (minDist2 < minDist2Edge) {
                 minDist2Edge = minDist2;
                 closest = eit;
@@ -219,11 +191,20 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
         queueLabel->setText(QString::fromStdString(ss.str()));
     };
 
-    auto updateComplexityInfo = [complexityLabel, complexity, this]() {
+    auto updateComplexityInfo = [complexityLabel, complexity, desiredComplexity, this]() {
         complexity->setMinimum(std::min((int) m_graph.number_of_edges(), complexity->minimum()));
         complexity->setValue(m_graph.number_of_edges());
         complexityLabel->setText(QString::fromStdString("#Edges: " + std::to_string(m_graph.number_of_edges())));
     };
+
+    connect(loadFileButton, &QPushButton::clicked, [this, complexity, updateComplexityInfo]() {
+        QString startDir = ".";
+        std::filesystem::path filePath = QFileDialog::getOpenFileName(this, tr("Select isolines"), startDir).toStdString();
+        if (filePath == "") return;
+        loadInput(filePath);
+        complexity->setMaximum(m_graph.number_of_edges());
+        updateComplexityInfo();
+    });
 
     connect(complexity, &QSlider::valueChanged, [this, updateComplexityInfo](int value) {
         m_graph.recallComplexity(value);
@@ -261,6 +242,12 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
     connect(redoButton, &QPushButton::clicked, [this, complexity]() {
         m_graph.forwardInTime();
         complexity->setValue(m_graph.number_of_edges());
+        m_renderer->repaint();
+    });
+
+    connect(runToComplexityButton, &QPushButton::clicked, [this, desiredComplexity, updateComplexityInfo]() {
+        m_collapse.runToComplexity(desiredComplexity->value());
+        updateComplexityInfo();
         m_renderer->repaint();
     });
 

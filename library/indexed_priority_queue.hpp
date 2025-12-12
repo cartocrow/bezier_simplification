@@ -56,16 +56,16 @@ namespace cartocrow::curved_simplification {
 	template <QueueTraits QT>
 	QT::EltHandle IndexedPriorityQueue<QT>::pop() {
 		EltHandle result = queue[0];
-        for (auto eltH : queue) {
-            if (QT::compare(eltH, result) < 0) {
-                std::cout << "! Problem !" << std::endl;
-                auto clps1 = result->data().collapse;
-                auto clps2 = eltH->data().collapse;
-                if (clps1.has_value() && clps2.has_value()) {
-                    std::cout << clps1->cost << " is not smallest, but " << clps2->cost << " is." << std::endl;
-                }
-            }
-        }
+//        for (auto eltH : queue) {
+//            if (QT::compare(eltH, result) < 0) {
+//                std::cout << "! Problem !" << std::endl;
+//                auto clps1 = result->data().collapse;
+//                auto clps2 = eltH->data().collapse;
+//                if (clps1.has_value() && clps2.has_value()) {
+//                    std::cout << clps1->cost << " is not smallest, but " << clps2->cost << " is." << std::endl;
+//                }
+//            }
+//        }
 		QT::setIndex(result, -1);
 
 		EltHandle last = queue[queue.size() - 1];

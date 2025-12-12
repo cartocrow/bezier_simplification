@@ -7,6 +7,7 @@ set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} ~/Documents/cartocrow-bins/)
 
 include_directories("~/Documents/cartocrow-bins/include")
 find_package(CartoCrow REQUIRED)
+find_package(spiro)
 
 set(CMAKE_AUTOMOC ON)
 
