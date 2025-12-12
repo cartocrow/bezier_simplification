@@ -1,9 +1,9 @@
 #pragma once
 
 #include <cartocrow/renderer/geometry_widget.h>
-#include "../../library/core/bezier_graph_2.h"
-#include "../../library/bezier_collapse.h"
-#include "../../library/steven_bezier_collapse.h"
+#include "library/core/bezier_graph_2.h"
+#include "library/bezier_collapse.h"
+#include "library/steven_bezier_collapse.h"
 #include <QMainWindow>
 
 #include <filesystem>

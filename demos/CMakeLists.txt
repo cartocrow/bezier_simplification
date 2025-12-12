@@ -1,3 +1,2 @@
-add_subdirectory(bezier_simplification)
 add_subdirectory(fit_cubic)
 add_subdirectory(spiro)

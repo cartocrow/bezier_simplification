@@ -4,7 +4,7 @@
 #include <QDockWidget>
 #include <QVBoxLayout>
 
-#include "../read_ipe_bezier_spline.h"
+#include "frontend/read_ipe_bezier_spline.h"
 
 FitCubicDemo::FitCubicDemo() {
     setWindowTitle("Fit cubic");
