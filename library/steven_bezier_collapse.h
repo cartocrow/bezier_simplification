@@ -81,29 +81,43 @@ template <typename BG> struct StevenBCTraits {
             auto afterPlE = pretendExact(afterPl);
 
             double maxKappaBefore = 0;
-            for (int i = 0; i <= nSegs; ++i) {
-                double ti = static_cast<double>(i) / nSegs;
-                double kappa = std::max(std::max(abs(c0.curvature(ti)), abs(c1.curvature(ti))), abs(c2.curvature(ti)));
-                if (kappa > maxKappaBefore) {
-                    maxKappaBefore = kappa;
+            for (int curveIndex = 0; curveIndex < beforeSpline.numCurves(); ++curveIndex) {
+                for (int i = 0; i <= nSegs; ++i) {
+                    double ti = static_cast<double>(i) / nSegs;
+                    double kappa = abs(beforeSpline.curvature({curveIndex, ti}));
+                    if (kappa > maxKappaBefore) {
+                        maxKappaBefore = kappa;
+                    }
                 }
             }
 
             double maxKappaAfter = 0;
+            double avgKappaAfter = 0;
             // Ignore start and end curvature
 //			for (int i = nSegs/10; i <= 9 * nSegs / 10; ++i) {
-            for (int i = 0; i <= nSegs; ++i) {
-                double ti = static_cast<double>(i) / nSegs;
-                double kappa = std::max(abs(c0_.curvature(ti)), abs(c1_.curvature(ti)));
-                if (kappa > maxKappaAfter) {
-                    maxKappaAfter = kappa;
+
+            std::vector<CubicBezierSpline::SplineParameter> afterSplineInflectionsT;
+            afterSpline.inflectionsT(std::back_inserter(afterSplineInflectionsT));
+            std::vector<double> curvatureTotals(afterSplineInflectionsT.size() + 1);
+            for (int curveIndex = 0; curveIndex < afterSpline.numCurves(); ++curveIndex) {
+                for (int i = 0; i <= nSegs; ++i) {
+                    double ti = static_cast<double>(i) / nSegs;
+                    double kappa = afterSpline.curvature({curveIndex, ti});
+                    int bin = std::distance(afterSplineInflectionsT.begin(), std::lower_bound(afterSplineInflectionsT.begin(), afterSplineInflectionsT.end(),
+                                                                                              CubicBezierSpline::SplineParameter{curveIndex, ti}));
+                    curvatureTotals[bin] += kappa;
+                    avgKappaAfter += abs(kappa);
+                    if (abs(kappa) > maxKappaAfter) {
+                        maxKappaAfter = abs(kappa);
+                    }
                 }
             }
+            avgKappaAfter /= (nSegs + 1);
 
             double err, symDiffErr, curvatureErr = 0;
             bool createsSmoothConnection = false;
             createsSmoothConnection = !connectsSmoothlyTo(c0, c1) && !connectsSmoothlyTo(c1, c2) && connectsSmoothlyTo(c0_, c1_);
-            if ((createsSmoothConnection || maxKappaAfter < maxKappaBefore) && !CGAL::do_curves_intersect(afterPlE.edges_begin(), afterPlE.edges_end())) {
+            if ((createsSmoothConnection || maxKappaAfter < 1.1 * maxKappaBefore) && !CGAL::do_curves_intersect(afterPlE.edges_begin(), afterPlE.edges_end())) {
                 Arrangement<Exact> arr;
                 std::vector<Arrangement<Exact>::X_monotone_curve_2> beforePlXMCurves;
                 for (auto eit = beforePl.edges_begin(); eit != beforePl.edges_end(); ++eit) {
@@ -150,13 +164,41 @@ template <typename BG> struct StevenBCTraits {
                     renderer.setStroke(Color(200, 200, 200), 3.0);
                     renderer.draw(beforeSpline);
                 }, "Before");
-                ipeRenderer.addPainting([afterSpline, err, symDiffErr, curvatureErr, createsSmoothConnection, maxKappaBefore, maxKappaAfter](renderer::GeometryRenderer& renderer) {
+                ipeRenderer.addPainting([afterSpline, err, symDiffErr, curvatureErr, createsSmoothConnection, maxKappaBefore, maxKappaAfter, avgKappaAfter, curvatureTotals, this](renderer::GeometryRenderer& renderer) {
                     renderer.setStroke(Color(0, 0, 0), 3.0);
+
+                    for (int curveIndex = 0; curveIndex < afterSpline.numCurves(); ++curveIndex) {
+                        for (int tStep = 0; tStep <= nSegs; ++tStep) {
+                            double t = static_cast<double>(tStep) / nSegs;
+                            auto c = afterSpline.curvature({curveIndex, t});
+                            auto n = afterSpline.normal({curveIndex, t});
+                            n /= sqrt(n.squared_length());
+                            auto p = afterSpline.position({curveIndex, t});
+                            renderer.draw(Segment<Inexact>(p, p + 500 * c * n));
+                        }
+                    }
+
                     renderer.draw(afterSpline);
+                    std::vector<CubicBezierSpline::SplinePoint> infls;
+                    afterSpline.inflections(std::back_inserter(infls));
+                    for (const auto& infl : infls) {
+                        renderer.draw(infl.point);
+                    }
+                    renderer.setHorizontalTextAlignment(renderer::GeometryRenderer::HorizontalTextAlignment::AlignLeft);
                     renderer.drawText({10, 10}, "Err: " + std::to_string(err));
                     renderer.drawText({10, 20}, "Sym diff err: " + std::to_string(sqrt(symDiffErr)));
                     renderer.drawText({10, 30}, "Max. curvature before: " + std::to_string(maxKappaBefore));
                     renderer.drawText({10, 40}, "Max. curvature after: " + std::to_string(maxKappaAfter));
+                    renderer.drawText({10, 50}, "#Inflections: " + std::to_string(infls.size()));
+                    renderer.drawText({10, 60}, "Avg. curvature: " + std::to_string(avgKappaAfter));
+                    std::stringstream ssBins;
+                    ssBins << "[";
+                    for (int it = 0; it < curvatureTotals.size(); ++it) {
+                        ssBins << curvatureTotals[it];
+                        if (it != curvatureTotals.size() - 1) ssBins << ", ";
+                    }
+                    ssBins << "]";
+                    renderer.drawText({10, 70}, "Curvature bins: " + ssBins.str());
                     if (createsSmoothConnection) {
                         renderer.drawText({10, 50}, "Creates smooth connection!");
                     }
@@ -279,7 +321,7 @@ template <typename BG> struct StevenBCTraits {
 
         // Try other collapse approach: fit a smooth curve
         auto otherCollapse = [&]() {
-            auto threshold = M_EPSILON;
+            auto threshold = 0.001;
 
             Vector<Inexact> v0 = (p1 - p0);
             v0 /= v0.squared_length();
