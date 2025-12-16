@@ -1,11 +1,11 @@
 set(SOURCES
     fit_cubic_demo.cpp
-    ../read_ipe_bezier_spline.cpp
+        ../../frontend/read_ipe_bezier_spline.cpp
 )
 
 set(HEADERS
     fit_cubic_demo.h
-    ../read_ipe_bezier_spline.h
+        ../../frontend/read_ipe_bezier_spline.h
 )
 
 add_executable(fit_cubic_demo ${SOURCES})

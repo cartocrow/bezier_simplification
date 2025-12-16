@@ -144,7 +144,7 @@ CubicBezierCurve generateBezier(const std::vector<Point<Inexact>>& pts, int firs
 // The recursive fitter
 void fitCubicRecursive(const std::vector<Point<Inexact>>& pts, int first, int last,
                        const Vector<Inexact>& tHat1, const Vector<Inexact>& tHat2, double allowedError,
-                       CubicBezierSpline& outSpline, int maxRecursion=10) {
+                       CubicBezierSpline& outSpline, int maxRecursion=10, int reparameterizationIterations=10) {
     int nPts = last - first + 1;
     if (nPts == 2) {
         double dist = length(pts[last] - pts[first]) / 3.0;
@@ -161,7 +161,7 @@ void fitCubicRecursive(const std::vector<Point<Inexact>>& pts, int first, int la
         outSpline.appendCurve(bez);
         return;
     }
-    for (int i=0;i<10;++i) {
+    for (int i=0;i<reparameterizationIterations;++i) {
         auto uPrime = reparameterize(pts, first, last, u, bez);
         bez = generateBezier(pts, first, last, uPrime, tHat1, tHat2);
         maxError = computeMaxError(pts, first, last, bez, uPrime, splitPoint);
@@ -182,39 +182,37 @@ void fitCubicRecursive(const std::vector<Point<Inexact>>& pts, int first, int la
     fitCubicRecursive(pts, splitPoint, last, negCenter, tHat2, allowedError, outSpline, maxRecursion - 1);
 }
 
-CubicBezierSpline fitSpline(const std::vector<Point<Inexact>>& points, double maxSquaredError) {
+CubicBezierSpline fitSpline(const std::vector<Point<Inexact>>& points, double maxSquaredError, int reparameterizationIterations) {
     assert(points.size() >= 2);
     CubicBezierSpline spline;
     Vector<Inexact> tHat1 = computeLeftTangent(points, 0);
     Vector<Inexact> tHat2 = computeRightTangent(points, static_cast<int>(points.size()) - 1);
-    fitCubicRecursive(points, 0, static_cast<int>(points.size()) - 1, tHat1, tHat2, maxSquaredError, spline);
+    fitCubicRecursive(points, 0, static_cast<int>(points.size()) - 1, tHat1, tHat2, maxSquaredError, spline, 10, reparameterizationIterations);
     return spline;
 }
 
-CubicBezierCurve fitCurve(const std::vector<Point<Inexact>>& points) {
+CubicBezierCurve fitCurve(const std::vector<Point<Inexact>>& points, int reparameterizationIterations) {
     assert(points.size() >= 2);
     CubicBezierSpline spline;
     Vector<Inexact> tHat1 = computeLeftTangent(points, 0);
     Vector<Inexact> tHat2 = computeRightTangent(points, static_cast<int>(points.size()) - 1);
-    fitCubicRecursive(points, 0, static_cast<int>(points.size()) - 1, tHat1, tHat2, 0, spline, 0);
+    fitCubicRecursive(points, 0, static_cast<int>(points.size()) - 1, tHat1, tHat2, 0, spline, 0, reparameterizationIterations);
     return spline.curve(0);
 }
 
-CubicBezierCurve fitCurve(const std::vector<Point<Inexact>>& points, const Vector<Inexact>& startTangent, const Vector<Inexact>& endTangent) {
+CubicBezierCurve fitCurve(const std::vector<Point<Inexact>>& points, const Vector<Inexact>& startTangent, const Vector<Inexact>& endTangent, int reparameterizationIterations) {
     assert(points.size() >= 2);
     CubicBezierSpline spline;
-    Vector<Inexact> tHat1 = computeLeftTangent(points, 0);
-    Vector<Inexact> tHat2 = computeRightTangent(points, static_cast<int>(points.size()) - 1);
-    fitCubicRecursive(points, 0, static_cast<int>(points.size()) - 1, normalize(startTangent), normalize(endTangent), 0.001, spline, 0);
+    fitCubicRecursive(points, 0, static_cast<int>(points.size()) - 1, normalize(startTangent), normalize(endTangent), 0.001, spline, 0, reparameterizationIterations);
     return spline.curve(0);
 }
 
-CubicBezierSpline fitTwoCurves(const std::vector<Point<Inexact>>& points) {
+CubicBezierSpline fitTwoCurves(const std::vector<Point<Inexact>>& points, int reparameterizationIterations) {
     assert(points.size() >= 2);
     CubicBezierSpline spline;
     Vector<Inexact> tHat1 = computeLeftTangent(points, 0);
     Vector<Inexact> tHat2 = computeRightTangent(points, static_cast<int>(points.size()) - 1);
-    fitCubicRecursive(points, 0, static_cast<int>(points.size()) - 1, tHat1, tHat2, 0, spline, 1);
+    fitCubicRecursive(points, 0, static_cast<int>(points.size()) - 1, tHat1, tHat2, 0, spline, 1, reparameterizationIterations);
     return spline;
 }
 }

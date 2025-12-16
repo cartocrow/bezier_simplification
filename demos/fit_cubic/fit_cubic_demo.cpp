@@ -4,7 +4,7 @@
 #include <QDockWidget>
 #include <QVBoxLayout>
 
-#include "../read_ipe_bezier_spline.h"
+#include "frontend/read_ipe_bezier_spline.h"
 
 FitCubicDemo::FitCubicDemo() {
     setWindowTitle("Fit cubic");
@@ -75,7 +75,9 @@ FitCubicDemo::FitCubicDemo() {
             {142.096, 401.42}
     };
 
-    auto spline = fitCurve(points);
+    auto spline = fitCurve(points, 1000);
+
+    m_renderer->fitInView(spline.bbox());
 
     m_renderer->addPainting([points, spline](GeometryRenderer& renderer) {
         for (const auto& pt : points) {

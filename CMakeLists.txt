@@ -1,16 +1,22 @@
 cmake_minimum_required(VERSION 3.27)
-project(bezier_simplification)
+
+project(cartocrow-bezier-simplification
+        VERSION 0.0.1
+        DESCRIPTION "CartoCrow Bézier Simplification"
+        LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} ~/Documents/cartocrow-bins/)
-
-include_directories("~/Documents/cartocrow-bins/include")
 find_package(CartoCrow REQUIRED)
-find_package(spiro)
 
+# Let CMake automatically handle Qt's "Meta-Object Compiler" preprocessor
 set(CMAKE_AUTOMOC ON)
+
+# All source files should use include paths relative to the source root
+include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
 add_subdirectory(library)
 add_subdirectory(demos)
+add_subdirectory(frontend)
 #add_subdirectory(test)

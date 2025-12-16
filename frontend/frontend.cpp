@@ -1,4 +1,4 @@
-#include "bezier_simplification_demo.h"
+#include "frontend.h"
 
 #include <QApplication>
 #include <QDockWidget>
@@ -10,7 +10,7 @@
 #include <QScrollArea>
 #include <QFileDialog>
 
-#include "../read_ipe_bezier_spline.h"
+#include "read_ipe_bezier_spline.h"
 
 void BezierSimplificationDemo::loadInput(const std::filesystem::path& path) {
     m_splines = ipeSplinesToIsolines(path);
