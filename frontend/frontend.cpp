@@ -9,6 +9,9 @@
 #include <QLabel>
 #include <QScrollArea>
 #include <QFileDialog>
+#include <QProgressDialog>
+
+#include "double_slider.h"
 
 #include "read_ipe_bezier_spline.h"
 
@@ -96,9 +99,13 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
 
     auto* complexityLabel = new QLabel("#Edges: ");
     auto* complexity = new QSlider();
+    auto* complexityLog = new DoubleSlider();
     complexity->setMaximum(m_graph.number_of_edges());
     complexity->setMinimum(m_graph.number_of_edges());
     complexity->setValue(m_graph.number_of_edges());
+    complexityLog->setMaximum(log(m_graph.number_of_edges() + 0.5));
+    complexityLog->setMinimum(log(m_graph.number_of_edges() + 0.5));
+    complexityLog->setValue(log(m_graph.number_of_edges() + 0.5));
     desiredComplexity->setMinimum(1);
     desiredComplexity->setMaximum(m_graph.number_of_edges());
     desiredComplexity->setValue(1);
@@ -106,6 +113,9 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
     complexity->setOrientation(Qt::Horizontal);
     vLayout->addWidget(complexityLabel);
     vLayout->addWidget(complexity);
+    complexityLog->setOrientation(Qt::Horizontal);
+    complexityLog->setPrecision(10000);
+    vLayout->addWidget(complexityLog);
 
     auto* drawSettings = new QLabel("<h3>Drawing</h3>");
     vLayout->addWidget(drawSettings);
@@ -191,25 +201,51 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
         queueLabel->setText(QString::fromStdString(ss.str()));
     };
 
-    auto updateComplexityInfo = [complexityLabel, complexity, desiredComplexity, this]() {
+    auto updateComplexityInfo = [complexityLabel, complexity, complexityLog, desiredComplexity, this]() {
+        std::cout << "=== update complexity info start ===" << std::endl;
         complexity->setMinimum(std::min((int) m_graph.number_of_edges(), complexity->minimum()));
         complexity->setValue(m_graph.number_of_edges());
         complexityLabel->setText(QString::fromStdString("#Edges: " + std::to_string(m_graph.number_of_edges())));
+        complexityLog->setMinimum(std::min(log(m_graph.number_of_edges() + 0.5), complexityLog->minimum()));
+        std::cout << "log of : " << m_graph.number_of_edges() << " is " << log(m_graph.number_of_edges() + 0.5) << std::endl;
+        complexityLog->setValue(log(m_graph.number_of_edges() + 0.5));
+        std::cout << "Complexity log: " << complexityLog->minimum() << " " << complexityLog->value() << " " << complexityLog->maximum() << std::endl;
+        std::cout << "=== update complexity info end ===" << std::endl;
     };
 
-    connect(loadFileButton, &QPushButton::clicked, [this, complexity, updateComplexityInfo]() {
+    connect(loadFileButton, &QPushButton::clicked, [this, complexity, updateComplexityInfo, complexityLog, desiredComplexity]() {
         QString startDir = ".";
         std::filesystem::path filePath = QFileDialog::getOpenFileName(this, tr("Select isolines"), startDir).toStdString();
         if (filePath == "") return;
         loadInput(filePath);
+
         complexity->setMaximum(m_graph.number_of_edges());
+        complexity->setMinimum(m_graph.number_of_edges());
+        complexity->setValue(m_graph.number_of_edges());
+        complexityLog->setMaximum(log(m_graph.number_of_edges() + 0.5));
+        complexityLog->setMinimum(log(m_graph.number_of_edges() + 0.5));
+        complexityLog->setValue(log(m_graph.number_of_edges() + 0.5));
+        desiredComplexity->setMaximum(m_graph.number_of_edges());
+
         updateComplexityInfo();
     });
 
     connect(complexity, &QSlider::valueChanged, [this, updateComplexityInfo](int value) {
+        std::cout << "=== complexity change start ===" << std::endl;
         m_graph.recallComplexity(value);
         m_renderer->repaint();
+        std::cout << "Complexity: " << value << std::endl;
         updateComplexityInfo();
+        std::cout << "=== complexity change end ===" << std::endl;
+    });
+
+    connect(complexityLog, &DoubleSlider::valueChanged, [this, updateComplexityInfo, complexityLog](double value) {
+        std::cout << "=== complexity log change start ===" << std::endl;
+        m_graph.recallComplexity(std::exp(value));
+        m_renderer->repaint();
+        std::cout << "Complexity log: " << value << " " << complexityLog->value() << std::endl;
+        updateComplexityInfo();
+        std::cout << "=== complexity log change end ===" << std::endl;
     });
 
 	connect(stepButton, &QPushButton::clicked, [this, updateQueueInfo, updateComplexityInfo]() {
@@ -246,7 +282,13 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
     });
 
     connect(runToComplexityButton, &QPushButton::clicked, [this, desiredComplexity, updateComplexityInfo]() {
-        m_collapse.runToComplexity(desiredComplexity->value());
+        auto startComplexity = m_graph.number_of_edges();
+        auto targetComplexity = desiredComplexity->value();
+        QProgressDialog progress("Simplifying...", "Abort", 0, startComplexity - targetComplexity, this);
+        progress.setWindowModality(Qt::WindowModal);
+        progress.setMinimumDuration(1000);
+        m_collapse.runToComplexity(desiredComplexity->value(), [&progress, startComplexity](int i) { progress.setValue(startComplexity - i); },
+            [&progress]() { return progress.wasCanceled(); });
         updateComplexityInfo();
         m_renderer->repaint();
     });

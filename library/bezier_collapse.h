@@ -76,15 +76,15 @@ class BezierCollapse {
 	BezierCollapse(BG& graph, BCT traits) : m_g(graph), m_traits(std::move(traits)) {};
 	void initialize() {
         m_q = {};
-//        std::vector<std::future<void>> futures;
+        std::vector<std::future<void>> futures;
 
         for (auto eit = m_g.edges_begin(); eit != m_g.edges_end(); ++eit) {
-//            futures.emplace_back(std::async(std::launch::async, [eit, this]() {
+            futures.emplace_back(std::async(std::launch::async, [eit, this]() {
                 m_traits.determineCollapse(eit);
-//            }));
+            }));
         }
 
-//        for (auto& f : futures) f.get();
+        for (auto& f : futures) f.get();
         for (auto eit = m_g.edges_begin(); eit != m_g.edges_end(); ++eit) {
             m_q.push(eit);
         }
@@ -98,6 +98,7 @@ class BezierCollapse {
 
 			Edge_handle prev = e->prev();
 			Edge_handle next = e->next();
+            if (prev == next) continue;
 			m_q.remove(prev);
 			m_q.remove(next);
 
@@ -122,10 +123,17 @@ class BezierCollapse {
 		}
 		return false;
 	}
-	bool runToComplexity(int k) {
+	bool runToComplexity(int k, std::optional<std::function<void(int)>> progress = std::nullopt,
+                         std::optional<std::function<bool()>> cancelled = std::nullopt) {
 		while (m_g.number_of_edges() > k) {
-            if (m_g.number_of_edges() % 1000 == 0) {
+            if (m_g.number_of_edges() % 100 == 0) {
                 std::cout << m_g.number_of_edges() << "\n";
+            }
+            if (progress.has_value()) {
+                (*progress)(m_g.number_of_edges());
+            }
+            if (cancelled.has_value() && (*cancelled)()) {
+                break;
             }
 			if (!step()) {
 				return false;
