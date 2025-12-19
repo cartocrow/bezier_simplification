@@ -56,7 +56,7 @@ CubicBezierSpline convertPathToSpline(const ipe::SubPath& path, const ipe::Matri
     } else if (path.type() == ipe::SubPath::ECurve) {
         const ipe::Curve* curve = path.asCurve();
 
-        for (int i = 0; i < curve->countSegments(); ++i) {
+        for (int i = 0; i < curve->countSegmentsClosing(); ++i) {
             ipe::CurveSegment seg = curve->segment(i);
             addCurveSegmentToSpline(seg, spline, matrix);
         }

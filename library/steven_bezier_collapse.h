@@ -407,7 +407,9 @@ private:
 
 public:
     void determineCollapse(typename BG::Edge_handle e) {
-        ipeRenderer = renderer::IpeRenderer();
+        if (debug) {
+            ipeRenderer = renderer::IpeRenderer();
+        }
 
         auto& edata = e->data();
         edata.collapse = std::nullopt;
@@ -436,6 +438,13 @@ public:
         }
         if (c2.source() == c2.target()) {
             edata.collapse = { .cost=0, .before=c0, .after=c1 };
+            return;
+        }
+
+        // Closed spline that consists of three Béziers.
+        // Current approaches do not work well.
+        // For now, just do not simplify these further.
+        if (c0.source() == c2.target()) {
             return;
         }
 

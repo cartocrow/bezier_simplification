@@ -17,6 +17,8 @@ set(HEADERS
     fit_cubic.h
     spiro_helpers/bezctx_cbs.h
     spiro_helpers/spiro_helpers.h
+    bezier_curve_quad_tree.h
+    utils.h
 )
 
 add_library(curved_simplification ${SOURCES})
