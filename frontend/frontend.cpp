@@ -202,15 +202,11 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
     };
 
     auto updateComplexityInfo = [complexityLabel, complexity, complexityLog, desiredComplexity, this]() {
-        std::cout << "=== update complexity info start ===" << std::endl;
         complexity->setMinimum(std::min((int) m_graph.number_of_edges(), complexity->minimum()));
         complexity->setValue(m_graph.number_of_edges());
         complexityLabel->setText(QString::fromStdString("#Edges: " + std::to_string(m_graph.number_of_edges())));
         complexityLog->setMinimum(std::min(log(m_graph.number_of_edges() + 0.5), complexityLog->minimum()));
-        std::cout << "log of : " << m_graph.number_of_edges() << " is " << log(m_graph.number_of_edges() + 0.5) << std::endl;
         complexityLog->setValue(log(m_graph.number_of_edges() + 0.5));
-        std::cout << "Complexity log: " << complexityLog->minimum() << " " << complexityLog->value() << " " << complexityLog->maximum() << std::endl;
-        std::cout << "=== update complexity info end ===" << std::endl;
     };
 
     connect(loadFileButton, &QPushButton::clicked, [this, complexity, updateComplexityInfo, complexityLog, desiredComplexity]() {
@@ -231,21 +227,15 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
     });
 
     connect(complexity, &QSlider::valueChanged, [this, updateComplexityInfo](int value) {
-        std::cout << "=== complexity change start ===" << std::endl;
         m_graph.recallComplexity(value);
         m_renderer->repaint();
-        std::cout << "Complexity: " << value << std::endl;
         updateComplexityInfo();
-        std::cout << "=== complexity change end ===" << std::endl;
     });
 
     connect(complexityLog, &DoubleSlider::valueChanged, [this, updateComplexityInfo, complexityLog](double value) {
-        std::cout << "=== complexity log change start ===" << std::endl;
         m_graph.recallComplexity(std::exp(value));
         m_renderer->repaint();
-        std::cout << "Complexity log: " << value << " " << complexityLog->value() << std::endl;
         updateComplexityInfo();
-        std::cout << "=== complexity log change end ===" << std::endl;
     });
 
 	connect(stepButton, &QPushButton::clicked, [this, updateQueueInfo, updateComplexityInfo]() {
