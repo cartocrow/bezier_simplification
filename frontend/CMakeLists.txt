@@ -2,12 +2,14 @@ set(SOURCES
     frontend.cpp
     read_ipe_bezier_spline.cpp
     double_slider.cpp
+    read_graph_gdal.cpp
 )
 
 set(HEADERS
     frontend.h
     read_ipe_bezier_spline.h
     double_slider.h
+    read_graph_gdal.h
 )
 
 set(CMAKE_AUTOMOC ON)

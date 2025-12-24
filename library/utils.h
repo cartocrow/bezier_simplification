@@ -142,7 +142,21 @@ namespace cartocrow::curved_simplification::utils {
         }
         // Curve does not intersect rectangle.
         // Curve is either completely inside or completely outside.
-        auto pt = pretendExact(curve.position(0.5));
+        auto pt = curve.position(0.5);
+        return contains(a, {pt.x(), pt.y()});
+    }
+
+    template<typename K>
+    bool overlaps(Rectangle<K>& a, const CubicBezierSpline& spline) {
+        std::vector<CubicBezierSpline::SplinePoint> inters;
+        for (auto side : {Left, Bottom, Right, Top}) {
+            auto seg = get_side<K>(a, side);
+            spline.intersections(approximate(seg), std::back_inserter(inters));
+            if (!inters.empty()) return true; // curve intersects rectangle
+        }
+        // Curve does not intersect rectangle.
+        // Curve is either completely inside or completely outside.
+        auto pt = spline.position({0, 0.5});
         return contains(a, {pt.x(), pt.y()});
     }
 

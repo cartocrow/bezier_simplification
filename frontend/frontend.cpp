@@ -13,11 +13,57 @@
 
 #include "double_slider.h"
 
+#include "read_graph_gdal.h"
 #include "read_ipe_bezier_spline.h"
 
-void BezierSimplificationDemo::loadInput(const std::filesystem::path& path) {
-    m_splines = ipeSplinesToIsolines(path);
+#include <cartocrow/core/transform_helpers.h>
 
+void saveGraphIntoTopoSet(const BaseGraph& graph, TopoSet<Inexact>& topoSet) {
+    std::unordered_set<const BaseGraph::Edge*> visited;
+
+    int nSegs = 31998 / graph.number_of_edges();
+
+    for (auto eit = graph.edges_begin(); eit != graph.edges_end(); ++eit) {
+        if (visited.contains(&*eit)) {
+            continue;
+        }
+
+        auto initial = eit;
+        // find the start, if it exists.
+        auto current = initial;
+        while (current->source()->degree() == 2 && current->prev() != initial) {
+            current = current->prev();
+        }
+        auto start = current;
+        BaseGraph::Edge_const_handle end;
+        if (current->prev() == initial) {
+            end = initial;
+        } else {
+            current = initial;
+            while (current->source()->degree() == 2 && current->next() != initial) {
+                current = current->next();
+            }
+            end = current;
+        }
+        auto arcIndex = start->data().index;
+
+        Polyline<Inexact> arc;
+
+        start->curve().samplePoints(nSegs, std::back_inserter(arc));
+        visited.insert(&*start);
+
+        for (auto arcEit = start->next(); true; arcEit = arcEit->next()) {
+            visited.insert(&*arcEit);
+            arc.pop_back();
+            arcEit->curve().samplePoints(nSegs, std::back_inserter(arc));
+            if (arcEit == end) break;
+        }
+        topoSet.arcs[arcIndex] = arc;
+    }
+//    graph.edges_begin()
+}
+
+void BezierSimplificationDemo::loadInput(const std::filesystem::path& path) {
     m_baseGraph.clear();
     m_debugEdge = std::nullopt;
 
@@ -27,23 +73,71 @@ void BezierSimplificationDemo::loadInput(const std::filesystem::path& path) {
         if (pToV.contains(p)) {
             return pToV.at(p);
         } else {
-            return m_baseGraph.insert_vertex(p);
+            auto newV = m_baseGraph.insert_vertex(p);
+            pToV[p] = newV;
+            return newV;
         }
     };
 
-    for (const auto& spline : m_splines) {
-        if (spline.empty()) continue;
-        auto lastV = getVertex(spline.curves()[0].source());
-        pToV[spline.curves()[0].source()] = lastV;
-        for (const auto &curve: spline.curves()) {
-            auto targetV = getVertex(curve.target());
-            pToV[curve.target()] = targetV;
-            m_baseGraph.add_edge(lastV, targetV, curve);
-            lastV = targetV;
+    if (path.extension() == ".ipe") {
+        auto splines = ipeSplinesToIsolines(path);
+
+        for (const auto& spline : splines) {
+            if (spline.empty()) continue;
+            auto lastV = getVertex(spline.curves()[0].source());
+            for (const auto &curve: spline.curves()) {
+                auto targetV = getVertex(curve.target());
+                m_baseGraph.add_edge(lastV, targetV, curve);
+                lastV = targetV;
+            }
+        }
+    } else {
+        auto [regionSet, spatialRef] = readRegionSetUsingGDAL(path);
+        m_spatialRef = spatialRef;
+        m_toposet = TopoSet<Inexact>(regionSet);
+
+        std::vector<Point<Inexact>> points;
+        for (const auto& arc : m_toposet.arcs) {
+            std::copy(arc.vertices_begin(), arc.vertices_end(), std::back_inserter(points));
+        }
+
+        auto bbox = CGAL::bbox_2(points.begin(), points.end());
+
+        m_transform = fitInto(bbox, Rectangle<Inexact>(0, 0, 1000, 1000));
+
+        for (int i = 0; i < m_toposet.arcs.size(); ++i) {
+            auto& arc = m_toposet.arcs[i];
+            std::cout << arc.vertex(0) << " =? " << arc.vertex(arc.size() - 1) << std::endl;
+            for (auto eit = arc.edges_begin(); eit != arc.edges_end(); ++eit) {
+                auto sourceV = getVertex(m_transform.transform(eit->source()));
+                auto targetV = getVertex(m_transform.transform(eit->target()));
+                auto curve = CubicBezierCurve(sourceV->point(), targetV->point());
+
+                // There should be no duplicates but there are somehow a couple, so we do this for now...
+                bool oppositeExists = false;
+                bool alreadyExists = false;
+                for (auto ieit = targetV->incident_edges_begin(); ieit != targetV->incident_edges_end(); ++ieit) {
+                    if ((*ieit)->target() == sourceV && (*ieit)->curve() == curve.reversed()) {
+                        oppositeExists = true;
+                        break;
+                    }
+                    if ((*ieit)->source() == sourceV && (*ieit)->curve() == curve) {
+                        alreadyExists = true;
+                        break;
+                    }
+                }
+                if (!oppositeExists && !alreadyExists) {
+                    auto eh = m_baseGraph.add_edge(sourceV, targetV, curve);
+                    eh->data().index = i;
+//                    eh->data().
+
+                }
+            }
         }
     }
 
     m_baseGraph.orient();
+    m_original = m_baseGraph;
     m_collapse.initialize();
 
     std::vector<Point<Inexact>> points;
@@ -57,6 +151,8 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
 	setWindowTitle("Bézier simplification");
 	m_renderer = new GeometryWidget();
 	m_renderer->setDrawAxes(false);
+    m_renderer->setMaxZoom(1000000000);
+    m_renderer->setMinZoom(0.00000001);
 	setCentralWidget(m_renderer);
 
 	auto* dockWidget = new QDockWidget();
@@ -71,6 +167,21 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
 
     auto* loadFileButton = new QPushButton("Load file");
     vLayout->addWidget(loadFileButton);
+
+    auto* exportButton = new QPushButton("Export");
+    vLayout->addWidget(exportButton);
+
+    auto* stackPolygons = new QCheckBox("Export: stacked polygons instead of holes");
+    stackPolygons->setChecked(false);
+    vLayout->addWidget(stackPolygons);
+
+    auto* editControlPoints = new QCheckBox("Edit control points");
+    editControlPoints->setChecked(false);
+    vLayout->addWidget(editControlPoints);
+
+    auto* editAlignTangents = new QCheckBox("Edit: align tangents");
+    editAlignTangents->setChecked(true);
+    vLayout->addWidget(editAlignTangents);
 
     auto* simplificationSettings = new QLabel("<h3>Simplification</h3>");
     vLayout->addWidget(simplificationSettings);
@@ -92,8 +203,20 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
     auto* undoButton = new QPushButton("Undo");
     vLayout->addWidget(undoButton);
 
+    auto* undo10Button = new QPushButton("Undo (x10)");
+    vLayout->addWidget(undo10Button);
+
+    auto* undo100Button = new QPushButton("Undo (x100)");
+    vLayout->addWidget(undo100Button);
+
     auto* redoButton = new QPushButton("Redo");
     vLayout->addWidget(redoButton);
+
+    auto* redo10Button = new QPushButton("Redo (x10)");
+    vLayout->addWidget(redo10Button);
+
+    auto* redo100Button = new QPushButton("Redo (x100)");
+    vLayout->addWidget(redo100Button);
 
 	loadInput("splines.ipe");
 
@@ -202,11 +325,21 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
     };
 
     auto updateComplexityInfo = [complexityLabel, complexity, complexityLog, desiredComplexity, this]() {
+        m_backup = std::nullopt;
         complexity->setMinimum(std::min((int) m_graph.number_of_edges(), complexity->minimum()));
         complexity->setValue(m_graph.number_of_edges());
         complexityLabel->setText(QString::fromStdString("#Edges: " + std::to_string(m_graph.number_of_edges())));
         complexityLog->setMinimum(std::min(log(m_graph.number_of_edges() + 0.5), complexityLog->minimum()));
         complexityLog->setValue(log(m_graph.number_of_edges() + 0.5));
+    };
+
+    auto resetEdits = [editControlPoints, this]() {
+        editControlPoints->setChecked(false);
+
+        // todo fix
+//        if (m_backup.has_value()) {
+//            m_baseGraph = *m_backup;
+//        }
     };
 
     connect(loadFileButton, &QPushButton::clicked, [this, complexity, updateComplexityInfo, complexityLog, desiredComplexity]() {
@@ -226,48 +359,113 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
         updateComplexityInfo();
     });
 
-    connect(complexity, &QSlider::valueChanged, [this, updateComplexityInfo](int value) {
+    connect(exportButton, &QPushButton::clicked, [this, stackPolygons]() {
+        QString startDir = ".";
+        std::filesystem::path filePath = QFileDialog::getSaveFileName(this, tr("Select isolines"), startDir).toStdString();
+        if (filePath.empty()) return;
+        saveGraphIntoTopoSet(m_baseGraph, m_toposet);
+        exportTopoSetUsingGDAL(filePath, m_toposet, m_transform.inverse(), m_spatialRef, stackPolygons->isChecked());
+    });
+
+    connect(complexity, &QSlider::valueChanged, [this, updateComplexityInfo, resetEdits](int value) {
+        resetEdits();
         m_graph.recallComplexity(value);
         m_renderer->repaint();
         updateComplexityInfo();
     });
 
-    connect(complexityLog, &DoubleSlider::valueChanged, [this, updateComplexityInfo, complexityLog](double value) {
+    connect(complexityLog, &DoubleSlider::valueChanged, [this, updateComplexityInfo, resetEdits, complexityLog](double value) {
+        resetEdits();
         m_graph.recallComplexity(std::exp(value));
         m_renderer->repaint();
         updateComplexityInfo();
     });
 
-	connect(stepButton, &QPushButton::clicked, [this, updateQueueInfo, updateComplexityInfo]() {
+	connect(stepButton, &QPushButton::clicked, [this, updateQueueInfo, updateComplexityInfo, resetEdits]() {
+        resetEdits();
 		m_collapse.step();
 		m_renderer->repaint();
         updateQueueInfo();
         updateComplexityInfo();
 	});
 
-    connect(step10Button, &QPushButton::clicked, [this, updateComplexityInfo, updateQueueInfo]() {
+    connect(step10Button, &QPushButton::clicked, [this, updateComplexityInfo, resetEdits, updateQueueInfo]() {
+        resetEdits();
         for (int i = 0; i < 10; ++i) m_collapse.step();
 		m_renderer->repaint();
         updateQueueInfo();
         updateComplexityInfo();
 	});
 
-    connect(step100Button, &QPushButton::clicked, [this, updateComplexityInfo, updateQueueInfo]() {
+    connect(step100Button, &QPushButton::clicked, [this, updateComplexityInfo, resetEdits, updateQueueInfo]() {
+        resetEdits();
         for (int i = 0; i < 100; ++i) m_collapse.step();
 		m_renderer->repaint();
         updateQueueInfo();
         updateComplexityInfo();
 	});
 
-    connect(undoButton, &QPushButton::clicked, [this, complexity]() {
+    connect(undoButton, &QPushButton::clicked, [this, complexity, resetEdits]() {
+        resetEdits();
         m_graph.backInTime();
         complexity->setValue(m_graph.number_of_edges());
         m_renderer->repaint();
     });
 
-    connect(redoButton, &QPushButton::clicked, [this, complexity]() {
+    connect(undo10Button, &QPushButton::clicked, [this, complexity, resetEdits]() {
+        resetEdits();
+        for (int i = 0; i < 10; ++i)
+            m_graph.backInTime();
+        complexity->setValue(m_graph.number_of_edges());
+        m_renderer->repaint();
+    });
+
+    connect(undo100Button, &QPushButton::clicked, [this, complexity, resetEdits]() {
+        resetEdits();
+        for (int i = 0; i < 100; ++i)
+            m_graph.backInTime();
+        complexity->setValue(m_graph.number_of_edges());
+        m_renderer->repaint();
+    });
+
+    connect(redoButton, &QPushButton::clicked, [this, complexity, resetEdits]() {
+        resetEdits();
         m_graph.forwardInTime();
         complexity->setValue(m_graph.number_of_edges());
+        m_renderer->repaint();
+    });
+
+    connect(redo10Button, &QPushButton::clicked, [this, complexity, resetEdits]() {
+        resetEdits();
+        for (int i = 0; i < 10; ++i)
+            m_graph.forwardInTime();
+        complexity->setValue(m_graph.number_of_edges());
+        m_renderer->repaint();
+    });
+
+    connect(redo100Button, &QPushButton::clicked, [this, complexity, resetEdits]() {
+        resetEdits();
+        for (int i = 0; i < 100; ++i)
+            m_graph.forwardInTime();
+        complexity->setValue(m_graph.number_of_edges());
+        m_renderer->repaint();
+    });
+
+    connect(editControlPoints, &QCheckBox::stateChanged, [this]() {
+        // todo
+//        if (!m_backup.has_value())
+//            m_backup = m_baseGraph;
+        m_editables.clear();
+        for (auto eit = m_baseGraph.edges_begin(); eit != m_baseGraph.edges_end(); ++eit) {
+            auto sourceControlEditable = std::make_shared<ControlPoint>(eit->curve().sourceControl(), std::pair(eit, false));
+            m_editables.push_back(sourceControlEditable);
+            auto targetControlEditable = std::make_shared<ControlPoint>(eit->curve().targetControl(), std::pair(eit, true));
+            m_editables.push_back(targetControlEditable);
+        }
+        for (auto vit = m_baseGraph.vertices_begin(); vit != m_baseGraph.vertices_end(); ++vit) {
+            auto endpointEditable = std::make_shared<ControlPoint>(vit->point(), vit);
+            m_editables.push_back(endpointEditable);
+        }
         m_renderer->repaint();
     });
 
@@ -277,27 +475,141 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
         QProgressDialog progress("Simplifying...", "Abort", 0, startComplexity - targetComplexity, this);
         progress.setWindowModality(Qt::WindowModal);
         progress.setMinimumDuration(1000);
-        m_collapse.runToComplexity(desiredComplexity->value(), [&progress, startComplexity](int i) { progress.setValue(startComplexity - i); },
-            [&progress]() { return progress.wasCanceled(); });
+        m_collapse.runToComplexity(desiredComplexity->value(), [&progress, startComplexity, this](int i) {
+            progress.setValue(startComplexity - i);
+            if (i % 100 == 0)
+                m_renderer->repaint();
+            },
+            [&progress]() { return progress.wasCanceled();
+        });
         updateComplexityInfo();
         m_renderer->repaint();
     });
 
-	m_renderer->addPainting([showOldVertices, this](GeometryRenderer& renderer) {
-        if (showOldVertices->isChecked()) {
-            renderer.setMode(GeometryRenderer::stroke | GeometryRenderer::vertices);
-        } else {
-            renderer.setMode(GeometryRenderer::stroke);
+    connect(m_renderer, &GeometryWidget::dragStarted, [this](const Point<Inexact>& p) {
+        m_dragging = nullptr;
+
+        std::optional<std::shared_ptr<ControlPoint>> closest;
+        double minDist = std::numeric_limits<double>::infinity();
+
+        for (auto editable : m_editables) {
+            auto diff = m_renderer->convertPoint(editable->point) - m_renderer->convertPoint(p);
+            auto d2 = diff.x() * diff.x() + diff.y() * diff.y();
+            if (d2 < 400 && d2 < minDist) {
+                minDist = d2;
+                closest = editable;
+            }
         }
-		renderer.setStroke(Color(200, 200, 200), 3.0);
-        for (const auto& spline : m_splines) {
-            renderer.draw(spline);
+
+        if (closest.has_value()) {
+            m_dragging = *closest;
+        }
+        m_renderer->repaint();
+    });
+
+    connect(m_renderer, &GeometryWidget::dragMoved, [this, editAlignTangents](const Point<Inexact>& p) {
+        if (m_dragging != nullptr) {
+            m_dragging->point = p;
+            if (auto vhP = std::get_if<Vertex_handle>(&m_dragging->type)) {
+                auto vh = *vhP;
+                vh->point() = p; // update
+                for (auto ieit = vh->incident_edges_begin(); ieit != vh->incident_edges_end(); ++ieit) {
+                    auto eh = *ieit;
+                    if (eh->source() == vh) {
+                        auto& c = eh->curve();
+                        auto diff = c.sourceControl() - c.source();
+                        c = CubicBezierCurve(p, p + diff, c.targetControl(), c.target());
+
+                        for (const auto& editable : m_editables) {
+                            if (auto otherEdgeEditableP = std::get_if<std::pair<Edge_handle, bool>>(&editable->type)) {
+                                if (otherEdgeEditableP->first == eh && !otherEdgeEditableP->second) {
+                                    editable->point = p + diff;
+                                    break;
+                                }
+                            }
+                        }
+                    } else {
+                        assert(eh->target() == vh);
+                        auto& c = eh->curve();
+                        auto diff = c.targetControl() - c.target();
+                        c = CubicBezierCurve(c.source(), c.sourceControl(), p + diff, p);
+
+                        for (const auto& editable : m_editables) {
+                            if (auto otherEdgeEditableP = std::get_if<std::pair<Edge_handle, bool>>(&editable->type)) {
+                                if (otherEdgeEditableP->first == eh && otherEdgeEditableP->second) {
+                                    editable->point = p + diff;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+
+            } else if (auto eiP = std::get_if<std::pair<Edge_handle, bool>>(&m_dragging->type)) {
+                auto [eh, b] = *eiP;
+                auto& c = eh->curve();
+                c = CubicBezierCurve(c.source(), !b ? p : c.sourceControl(), b ? p : c.targetControl(), c.target());
+
+                if (editAlignTangents->isChecked()) {
+                    if (b && eh->target()->degree() == 2) {
+                        auto next = eh->next();
+                        auto& nc = next->curve();
+                        auto diff = nc.sourceControl() - nc.source();
+                        auto dist = sqrt(diff.squared_length());
+                        auto vec = c.target() - c.targetControl();
+                        vec /= sqrt(vec.squared_length());
+                        auto newSourceControl = nc.source() + vec * dist;
+                        nc = CubicBezierCurve(nc.source(), newSourceControl, nc.targetControl(), nc.target());
+                        for (const auto& editable : m_editables) {
+                            if (auto otherEdgeEditableP = std::get_if<std::pair<Edge_handle, bool>>(&editable->type)) {
+                                if (otherEdgeEditableP->first == next && !otherEdgeEditableP->second) {
+                                    editable->point = newSourceControl;
+                                }
+                            }
+                        }
+                    } else if (!b && eh->source()->degree() == 2) {
+                        auto prev = eh->prev();
+                        auto& pc = prev->curve();
+                        auto diff = pc.target() - pc.targetControl();
+                        auto dist = sqrt(diff.squared_length());
+                        auto vec = c.sourceControl() - c.source();
+                        vec /= sqrt(vec.squared_length());
+                        auto newTargetControl = pc.target() - vec * dist;
+                        pc = CubicBezierCurve(pc.source(), pc.sourceControl(), newTargetControl, pc.target());
+                        for (const auto& editable : m_editables) {
+                            if (auto otherEdgeEditableP = std::get_if<std::pair<Edge_handle, bool>>(&editable->type)) {
+                                if (otherEdgeEditableP->first == prev && otherEdgeEditableP->second) {
+                                    editable->point = newTargetControl;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            m_renderer->repaint();
+        }
+    });
+
+    connect(m_renderer, &GeometryWidget::dragEnded, [this](const Point<Inexact>& p) {
+        m_dragging = nullptr;
+        m_renderer->repaint();
+    });
+
+	m_renderer->addPainting([showOldVertices, this](GeometryRenderer& renderer) {
+		renderer.setStroke(Color(200, 200, 200), 2.0);
+        for (auto eit = m_original.edges_begin(); eit != m_original.edges_end(); ++eit) {
+            renderer.draw(eit->curve());
+        }
+        if (showOldVertices->isChecked()) {
+            for (auto vit = m_original.vertices_begin(); vit != m_original.vertices_end(); ++vit) {
+                renderer.draw(vit->point());
+            }
         }
 	}, "Original");
 
 //    m_renderer->addPainting([this](GeometryRenderer& renderer) {
 //        renderer.setMode(GeometryRenderer::stroke);
-//        renderer.setStroke(Color(200, 0, 200), 3.0);
+//        renderer.setStroke(Color(200, 0, 200), 2.0);
 //        renderer.setStrokeOpacity(10);
 //        for (auto eit = m_baseGraph.edges_begin(); eit != m_baseGraph.edges_end(); ++eit) {
 //            int tSteps = 1000;
@@ -315,12 +627,12 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
 
 	m_renderer->addPainting([this, showNewVertices, showNewControlPoints, showEdgeDirection, showDebugInfo](GeometryRenderer& renderer) {
 	  	renderer.setMode(GeometryRenderer::stroke);
-		renderer.setStroke(Color(0, 0, 0), 3.0);
+		renderer.setStroke(Color(0, 0, 0), 2.0);
 		for (auto eit = m_baseGraph.edges_begin(); eit != m_baseGraph.edges_end(); ++eit) {
             if (showDebugInfo->isChecked() && eit->data().collapse.has_value()) {
-                renderer.setStroke(Color(50, 200, 50), 3.0);
+                renderer.setStroke(Color(50, 200, 50), 2.0);
             } else {
-                renderer.setStroke(Color(0, 0, 0), 3.0);
+                renderer.setStroke(Color(0, 0, 0), 2.0);
             }
 			renderer.draw(eit->curve());
             if (showEdgeDirection->isChecked()) {
@@ -340,10 +652,10 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
         // Control points
         for (auto eit = m_baseGraph.edges_begin(); eit != m_baseGraph.edges_end(); ++eit) {
             if (showNewControlPoints->isChecked()) {
-                renderer.setStroke(Color(0, 0, 255), 3.0);
+                renderer.setStroke(Color(0, 0, 255), 2.0);
                 renderer.draw(eit->curve().sourceControl());
                 renderer.draw(eit->curve().targetControl());
-                renderer.setStroke(Color(255, 0, 255), 3.0);
+                renderer.setStroke(Color(255, 0, 255), 2.0);
                 renderer.draw(eit->curve().source());
                 renderer.draw(eit->curve().target());
             }
@@ -357,11 +669,11 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
 
     m_renderer->addPainting([this](GeometryRenderer& renderer) {
         if (!m_debugEdge.has_value()) return;
-        renderer.setStroke(Color(255, 0, 0), 3.0);
+        renderer.setStroke(Color(255, 0, 0), 2.0);
         auto eh = *m_debugEdge;
         renderer.draw(eh->curve());
         const auto& d = eh->data();
-        renderer.setStroke(Color(50, 200, 50), 3.0);
+        renderer.setStroke(Color(50, 200, 50), 2.0);
         if (d.collapse.has_value()) {
             const auto& col = *d.collapse;
             renderer.draw(col.before);
@@ -371,12 +683,39 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
             renderer.drawText(bbC, std::to_string(col.cost));
         }
         if (d.hist == nullptr) return;
-        auto op = std::dynamic_pointer_cast<detail::CollapseEdgeOperation<BaseGraph>>(d.hist);
-        renderer.setStroke(Color(200, 50, 200), 3.0);
+        auto op = std::dynamic_pointer_cast<curved_simplification::detail::CollapseEdgeOperation<BaseGraph>>(d.hist);
+        renderer.setStroke(Color(200, 50, 200), 2.0);
         renderer.draw(op->m_c0);
         renderer.draw(op->m_c1);
         renderer.draw(op->m_c2);
     }, "Debug edge");
+
+    m_renderer->addPainting([this, editControlPoints](GeometryRenderer& renderer) {
+        if (!editControlPoints->isChecked()) return;
+
+        // Control polylines
+        for (auto eit = m_baseGraph.edges_begin(); eit != m_baseGraph.edges_end(); ++eit) {
+            renderer.setStroke(Color(0, 255, 0), 1.0);
+            Polyline<Inexact> pl;
+            for (int c = 0; c < 4; ++c) pl.push_back(eit->curve().control(c));
+            renderer.draw(pl);
+        }
+
+        for (auto editable : m_editables) {
+            if (auto vhP = std::get_if<Vertex_handle>(&editable->type)) {
+                renderer.setStroke(Color(255, 0, 255), 2.0);
+                renderer.draw(editable->point);
+            } else if (auto eiP = std::get_if<std::pair<Edge_handle, bool>>(&editable->type)) {
+                renderer.setStroke(Color(0, 0, 255), 2.0);
+                auto [eh, b] = *eiP;
+                if (b) {
+                    renderer.draw(editable->point);
+                } else {
+                    renderer.draw(editable->point);
+                }
+            }
+        }
+    }, "Control points");
 }
 
 int main(int argc, char* argv[]) {

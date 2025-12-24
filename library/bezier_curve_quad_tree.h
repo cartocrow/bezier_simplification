@@ -27,7 +27,7 @@ namespace cartocrow::curved_simplification {
 		// Is the (possibly infinite) node disjoint from the rectangle
 		bool disjoint(Node* node, Rectangle<K>& rect);
 
-		void findOverlappedRecursive(Node* n, Rectangle<K>& query, std::function<void(PHandle)> act);
+		bool findOverlappedRecursive(Node* n, Rectangle<K>& query, std::function<bool(PHandle)> act);
 
 		template <bool extend> Node* find(PHandle elt);
 
@@ -39,7 +39,8 @@ namespace cartocrow::curved_simplification {
 		void insert(PHandle elt);
 		bool remove(PHandle elt);
 
-		void findOverlapped(Rectangle<K>& query, std::function<void(PHandle)> act);
+        /// If act returns true the search is stopped. The function return true if the search was cut short.
+		bool findOverlapped(Rectangle<K>& query, std::function<bool(PHandle)> act);
 	};
 
 } // namespace cartocrow::simplification
@@ -133,33 +134,34 @@ namespace cartocrow::curved_simplification {
     }
 
     template <typename PHandle, typename K>
-    void BezierCurveQuadTree<PHandle, K>::findOverlappedRecursive(Node* n, Rectangle<K>& query, std::function<void(PHandle)> act) {
+    bool BezierCurveQuadTree<PHandle, K>::findOverlappedRecursive(Node* n, Rectangle<K>& query, std::function<bool(PHandle)> act) {
 
         if (n == nullptr) {
-            return;
+            return false;
         }
         else if (disjoint(n, query)) {
-            return;
+            return false;
         }
 
         if (encloses(query, n)) {
             for (PHandle elt : *(n->elts)) {
-                act(elt);
+                if (act(elt)) return true;
             }
         }
         else {
             for (PHandle elt : *(n->elts)) {
                 CubicBezierCurve curve = m_toBezierCurve(elt);
                 if (utils::overlaps(query, curve)) {
-                    act(elt);
+                    if (act(elt)) return true;
                 }
             }
         }
 
-        findOverlappedRecursive(n->lb, query, act);
-        findOverlappedRecursive(n->lt, query, act);
-        findOverlappedRecursive(n->rb, query, act);
-        findOverlappedRecursive(n->rt, query, act);
+        if (findOverlappedRecursive(n->lb, query, act)) return true;
+        if (findOverlappedRecursive(n->lt, query, act)) return true;
+        if (findOverlappedRecursive(n->rb, query, act)) return true;
+        if (findOverlappedRecursive(n->rt, query, act)) return true;
+        return false;
     }
 
     template <typename PHandle, typename K>
@@ -346,8 +348,8 @@ namespace cartocrow::curved_simplification {
     }
 
     template <typename PHandle, typename K>
-    void BezierCurveQuadTree<PHandle, K>::findOverlapped(Rectangle<K>& query, std::function<void(PHandle)> act) {
-        findOverlappedRecursive(root, query, act);
+    bool BezierCurveQuadTree<PHandle, K>::findOverlapped(Rectangle<K>& query, std::function<bool(PHandle)> act) {
+        return findOverlappedRecursive(root, query, act);
     }
 
 } // namespace cartocrow::simplification

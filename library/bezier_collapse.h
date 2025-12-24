@@ -32,9 +32,13 @@ concept BCSetup = requires(typename BG::Edge_handle e) {
 };
 struct ECData;
 struct HECData;
+struct HECIData;
+
 using HECGraph = Bezier_graph_2<std::monostate, HECData>;
+using HECIGraph = Bezier_graph_2<std::monostate, HECIData>;
 using BezierCollapseGraph = Bezier_graph_2<std::monostate, ECData>;
 using BezierCollapseGraphWithHistory = CollapseHistoryGraphAdaptor<HECGraph>;
+using BezierCollapseGraphWithHistoryAndIndex = CollapseHistoryGraphAdaptor<HECIGraph>;
 
 template <class Edge_handle>
 struct ECBase {
@@ -52,9 +56,15 @@ struct HECData : ECBase<typename BezierCollapseGraphWithHistory::Edge_handle> {
     std::shared_ptr<Operation<HECGraph>> hist;
     std::shared_ptr<Operation<HECGraph>> futr;
 };
+struct HECIData : ECBase<typename BezierCollapseGraphWithHistoryAndIndex::Edge_handle> {
+    std::shared_ptr<Operation<HECIGraph>> hist;
+    std::shared_ptr<Operation<HECIGraph>> futr;
+    int index;
+};
 }
 using BezierCollapseGraph = detail::BezierCollapseGraph;
 using BezierCollapseGraphWithHistory = detail::BezierCollapseGraphWithHistory;
+using BezierCollapseGraphWithHistoryAndIndex = detail::BezierCollapseGraphWithHistoryAndIndex;
 template <class BG, class BCT>// requires detail::BCSetup<BG, BCT>
 class BezierCollapse {
   private:
@@ -105,6 +115,9 @@ class BezierCollapse {
         std::vector<std::future<void>> futures;
 
         for (auto eit = m_g.edges_begin(); eit != m_g.edges_end(); ++eit) {
+            eit->data().blocked_by.clear();
+            eit->data().blocking.clear();
+            eit->data().blocked_by_degzero = false;
             futures.emplace_back(std::async(std::launch::async, [eit, this]() {
                 m_traits.determineCollapse(eit);
             }));
@@ -126,7 +139,7 @@ class BezierCollapse {
             return false;
         }
 
-        int nSegs = 100; // todo make parameter
+        int nSegs = 20; // todo make parameter
         CubicBezierSpline beforeSpline;
         beforeSpline.appendCurve(prev->curve());
         beforeSpline.appendCurve(collapse->curve());
@@ -136,8 +149,26 @@ class BezierCollapse {
         afterSpline.appendCurve(clps.before);
         afterSpline.appendCurve(clps.after);
 
+        CubicBezierCurve curve = edge->curve();
+        Box curveBox = curve.bbox();
+        Box combBox = beforeSpline.bbox() + afterSpline.bbox();
+        if (!do_overlap(combBox, curveBox)) return false;
+
+        // Blocks if edge intersects beforeSpline or afterSpline
+        if (curve.sub(0.01, 0.99).intersects(afterSpline, 0.01)) {
+            return true;
+        }
+        Rectangle<Inexact> combRect(combBox);
+        Rectangle<Inexact> curveRect(curveBox);
+
+        // Blocks if edge is in between the beforeSpline and afterSpline
+        if (!utils::encloses(combRect, curveRect)) return false;
+
         // Because CGAL's Bézier functionality is a bit buggy (https://github.com/CGAL/cgal/issues/9176),
         // we use polyline approximations here for now.
+
+        std::cout << "Checking for sweeping-over: " << collapse->source()->point() << " -> " << collapse->target()->point() << std::endl;
+
         auto beforePl = beforeSpline.polyline(nSegs);
         auto afterPl = afterSpline.polyline(nSegs);
         std::vector<Arrangement<Exact>::X_monotone_curve_2> xmCurvesBefore;
@@ -157,25 +188,9 @@ class BezierCollapse {
         for (auto fit = arr.faces_begin(); fit != arr.faces_end(); ++fit) {
             if (fit->is_unbounded()) continue;
 
-            Arrangement<Exact> polygonPolylineArr;
             auto polygon = face_to_polygon_with_holes<Exact>(fit);
             auto& outer = polygon.outer_boundary();
-            for (auto eit = outer.edges_begin(); eit != outer.edges_end(); ++eit) {
-                CGAL::insert(polygonPolylineArr, *eit);
-            }
-            for (auto& h : polygon.holes()) {
-                for (auto eit = h.edges_begin(); eit != h.edges_end(); ++eit) {
-                    CGAL::insert(polygonPolylineArr, *eit);
-                }
-            }
-            for (auto eit = testPl.edges_begin(); eit != testPl.edges_end(); ++eit) {
-                CGAL::insert(polygonPolylineArr, *eit);
-            }
-            for (auto vit = polygonPolylineArr.vertices_begin(); vit != polygonPolylineArr.vertices_end(); ++vit) {
-                if (vit->degree() > 2 && vit->point() != pretendExact(beforeSpline.source()) && vit->point() != pretendExact(beforeSpline.target())) {
-                    return true;
-                }
-            }
+
             auto arbitraryPoint = CGAL::midpoint(*testPl.edges_begin());
             bool arbitraryPointInPolygon = outer.has_on_bounded_side(arbitraryPoint);
             for (auto& h : polygon.holes()) {
@@ -186,7 +201,6 @@ class BezierCollapse {
             }
             if (arbitraryPointInPolygon) return true;
         }
-
         return false;
     }
 
@@ -196,6 +210,8 @@ class BezierCollapse {
 			auto& edata = e->data();
 
 			if (!edata.collapse.has_value()) continue;
+
+            if (e->source()->degree() != 2 || e->target()->degree() != 2) continue;
 
 			Edge_handle prev = e->prev();
 			Edge_handle next = e->next();
@@ -226,15 +242,20 @@ class BezierCollapse {
                     if (blocks(b, e)) {
                         b->data().blocking.push_back(e);
                         e->data().blocked_by.push_back(b);
-                        std::cout << "Edge: " << e->curve().source() << " -> " << e->curve().target()
-                                  << " is blocked by: " << b->curve().source() << " -> " << b->curve().target();
-
+//                        std::cout << "Edge: " << e->curve().source() << " -> " << e->curve().target()
+//                                  << " is blocked by: " << b->curve().source() << " -> " << b->curve().target() << std::endl;
+                        return true; // Stop the search
                     }
+                    return false;
                 });
 //            }
 
             if (//edata.blocked_by_degzero ||
                 !edata.blocked_by.empty()) continue;
+
+//            std::cout << "Collapsing: " << e->source()->point() << " -> " << e->target()->point() << std::endl;
+//            std::cout << "prev: " << prev->source()->point() << " -> " << prev->target()->point() << std::endl;
+//            std::cout << "next: " << next->source()->point() << " -> " << next->target()->point() << std::endl;
 
             m_q.remove(prev);
             m_q.remove(next);
@@ -243,9 +264,56 @@ class BezierCollapse {
             m_bcqt->remove(e);
             m_bcqt->remove(next);
 
-            auto v = m_g.collapse_edge(e, c0, c1);
-            auto eh1 = v->incoming();
-            auto eh2 = v->outgoing();
+            for (Edge_handle b : edata.blocking) {
+//                std::cout << "Going to remove e: " << e->source()->point() << " -> " << e->target()->point() << " from b's blocked_by: " << b->source()->point() << " -> " << b->target()->point() << std::endl;
+                if (utils::listRemove(e, b->data().blocked_by)) {
+                    if (b->data().blocked_by.empty() && !b->data().blocked_by_degzero) {
+                        m_q.push(b);
+                    }
+                }
+            }
+            edata.blocking.clear();
+
+            for (Edge_handle b : prev->data().blocking) {
+//                std::cout << "Going to remove prev: " << prev->source()->point() << " -> " << prev->target()->point() << " from b's blocked_by: " << b->source()->point() << " -> " << b->target()->point() << std::endl;
+                if (utils::listRemove(prev, b->data().blocked_by)) {
+                    if (b->data().blocked_by.empty() && !b->data().blocked_by_degzero) {
+                        m_q.push(b);
+                    }
+                }
+            }
+            for (Edge_handle b : prev->data().blocked_by) {
+                utils::listRemove(prev, b->data().blocking);
+            }
+            prev->data().blocking.clear();
+
+            for (Edge_handle b : next->data().blocking) {
+//                std::cout << "Going to remove next: " << next->source()->point() << " -> " << next->target()->point() << " from b's blocked_by: " << b->source()->point() << " -> " << b->target()->point() << std::endl;
+                if (utils::listRemove(next, b->data().blocked_by)) {
+                    if (b->data().blocked_by.empty() && !b->data().blocked_by_degzero) {
+                        m_q.push(b);
+                    }
+                }
+            }
+            for (Edge_handle b : next->data().blocked_by) {
+                utils::listRemove(next, b->data().blocking);
+            }
+            next->data().blocking.clear();
+
+            Edge_handle eh1;
+            Edge_handle eh2;
+            if constexpr (std::is_same_v<BG, BezierCollapseGraphWithHistoryAndIndex>) {
+                auto index = e->data().index;
+                auto v = m_g.collapse_edge(e, c0, c1);
+                eh1 = v->incoming();
+                eh2 = v->outgoing();
+                eh1->data().index = index;
+                eh2->data().index = index;
+            } else {
+                auto v = m_g.collapse_edge(e, c0, c1);
+                eh1 = v->incoming();
+                eh2 = v->outgoing();
+            }
 
             m_bcqt->insert(eh1);
             m_bcqt->insert(eh2);
@@ -258,6 +326,16 @@ class BezierCollapse {
 			if (eh2->target()->degree() == 2) {
 				update(eh2->next());
 			}
+
+//            for (auto eit = m_g.edges_begin(); eit != m_g.edges_end(); ++eit) {
+//                auto& edata = eit->data();
+//                for (auto eh : edata.blocking) {
+//                    std::cout << "eit " << eit->source()->point() << " -> " << eit->target()->point() << " is blocking " << eh->source()->point() << " -> " << eh->target()->point() << std::endl;
+//                }
+//                for (auto eh : edata.blocked_by) {
+//                    std::cout << "eit " << eit->source()->point() << " -> " << eit->target()->point() << " is blocked by " << eh->source()->point() << " -> " << eh->target()->point() << std::endl;
+//                }
+//            }
 
 			return true;
 		}

@@ -20,3 +20,5 @@ add_subdirectory(library)
 add_subdirectory(demos)
 add_subdirectory(frontend)
 #add_subdirectory(test)
+
+message(STATUS "CGAL version: ${CGAL_VERSION}")

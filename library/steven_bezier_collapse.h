@@ -24,11 +24,12 @@ bool connectsSmoothlyTo(const CubicBezierCurve& c1, const CubicBezierCurve& c2);
 template <typename BG> struct StevenBCTraits {
 	int tSteps;
 	int nSegs;
+    int symDiffSegs;
 	bool debug;
     renderer::IpeRenderer ipeRenderer;
 
-	StevenBCTraits(bool debug = false, int tSteps = 10,	int nSegs = 100) :
-	      tSteps(tSteps), nSegs(nSegs), debug(debug) {};
+	StevenBCTraits(bool debug = false, int tSteps = 10,	int nSegs = 100, int symDiffSegs = 10) :
+	      tSteps(tSteps), nSegs(nSegs), symDiffSegs(symDiffSegs), debug(debug) {};
 
 private:
     /// Returns two cubic Bézier curves that approximate a spiro spline that in turn approximates the input spline.
@@ -213,7 +214,16 @@ private:
 
         // cut spline
         auto cutParam = spline.nearest(currentControl).param;
+        Polygon<Inexact> triangle;
+        triangle.push_back(spline.source());
+        triangle.push_back(currentControl);
+        triangle.push_back(spline.target());
+        double willBeAdded = triangle.area();
         auto [spline1, spline2] = spline.split(cutParam);
+        if (spline1.empty() || spline2.empty()) {
+            std::cout << "Spline empty!" << std::endl;
+            return std::nullopt;
+        }
         auto spline1Pl = spline1.polyline(nSegs);
         auto spline2Pl = spline2.polyline(nSegs);
         std::vector<Point<Inexact>> spline1Pts(spline1Pl.vertices_begin(), spline1Pl.vertices_end());
@@ -225,8 +235,12 @@ private:
         p1 = curve1.sourceControl();
         p5 = curve2.targetControl();
         auto p3 = currentControl;
-        auto a0 = -spline1.signedArea();
-        auto a1 = -spline2.signedArea();
+        auto s1a = spline1.signedArea();
+        auto s2a = spline2.signedArea();
+        auto theTargetSum = targetArea - willBeAdded;
+        auto a0 = -s1a * theTargetSum / (s1a + s2a);
+//        auto a1 = -spline2.signedArea();
+        auto a1 = -s2a * theTargetSum / (s1a + s2a);
 
         std::optional<CubicBezierCurve> c0_maybe;
         if (a0 == 0) {
@@ -348,6 +362,7 @@ private:
         }
 
         if (!c1_maybe.has_value()) return std::nullopt;
+
         return std::pair(*c0_maybe, *c1_maybe);
     }
 
@@ -382,17 +397,28 @@ private:
         return {curvatureTotals, maxKappa, avgKappa};
     }
 
-    double evaluateSymDiff(const Polyline<Exact>& afterPlE, const Polyline<Inexact>& beforePl) {
+    double evaluateSymDiff(const CubicBezierSpline& beforeSpline, const CubicBezierSpline& afterSpline) {
+        auto beforePlE = pretendExact(beforeSpline.polyline(symDiffSegs));
+        auto afterPlE = pretendExact(afterSpline.polyline(symDiffSegs));
         Arrangement<Exact> arr;
         std::vector<Arrangement<Exact>::X_monotone_curve_2> beforePlXMCurves;
-        for (auto eit = beforePl.edges_begin(); eit != beforePl.edges_end(); ++eit) {
-            beforePlXMCurves.emplace_back(pretendExact(*eit));
+        for (auto eit = beforePlE.edges_begin(); eit != beforePlE.edges_end(); ++eit) {
+            beforePlXMCurves.emplace_back(*eit);
         }
-        // todo use insert_non_intersecting_curves once it is guaranteed that the input curve is planar
-        CGAL::insert(arr, beforePlXMCurves.begin(), beforePlXMCurves.end());
-
-//        auto arr = beforeArr;
+        CGAL::insert_non_intersecting_curves(arr, beforePlXMCurves.begin(), beforePlXMCurves.end());
         CGAL::insert(arr, afterPlE.edges_begin(), afterPlE.edges_end());
+        if (debug) {
+            ipeRenderer.addPainting([beforeSpline, afterSpline, arr](renderer::GeometryRenderer& renderer) {
+                renderer.setMode(renderer::GeometryRenderer::stroke);
+                renderer.draw(beforeSpline);
+                renderer.draw(afterSpline);
+                for (auto eit = arr.edges_begin(); eit != arr.edges_end(); ++eit) {
+                    Segment<Exact> seg = eit->curve();
+                    renderer.draw(seg);
+                }
+            });
+            ipeRenderer.nextPage();
+        }
         double symDiffErr = 0;
         for (auto fit = arr.faces_begin(); fit != arr.faces_end(); ++fit) {
             if (fit->is_unbounded()) continue;
@@ -468,7 +494,6 @@ public:
             afterSpline.appendCurve(c0_);
             afterSpline.appendCurve(c1_);
             auto afterPl = afterSpline.polyline(10);
-            auto afterPlE = pretendExact(afterPl);
 
             auto curvatureInfo = evaluateCurvature(afterSpline);
             auto maxKappaAfter = curvatureInfo.maximumAbsoluteCurvature;
@@ -483,8 +508,8 @@ public:
                 std::cout << "c1 connects smoothly to c2: " << connectsSmoothlyTo(c1, c2) << std::endl;
                 std::cout << "c0_ connects smoothly to c1_: " << connectsSmoothlyTo(c0_, c1_) << std::endl;
             }
-            if ((createsSmoothConnection || maxKappaAfter < 1.1 * maxKappaBefore) && !CGAL::do_curves_intersect(afterPlE.edges_begin(), afterPlE.edges_end())) {
-                symDiffErr = evaluateSymDiff(afterPlE, beforePl);
+            if ((createsSmoothConnection || maxKappaAfter < 1.1 * maxKappaBefore) && !afterSpline.selfIntersects(0.01)) {
+                symDiffErr = evaluateSymDiff(beforeSpline, afterSpline);
                 err = sqrt(symDiffErr);
 
                 if (createsSmoothConnection) {

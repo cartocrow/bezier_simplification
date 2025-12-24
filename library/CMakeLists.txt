@@ -2,6 +2,7 @@ set(SOURCES
     steven_bezier_collapse.cpp
     fit_cubic.cpp
     spiro_helpers/bezctx_cbs.cpp
+    core/topo_set.cpp
 )
 set(HEADERS
     common.h
@@ -11,6 +12,8 @@ set(HEADERS
     core/graph_segment_traits_2.h
     core/graph_curve_traits_2.h
     core/graph_2_like.h
+    core/region_set.h
+    core/topo_set.h
     indexed_priority_queue.h
     steven_bezier_collapse.h
     curved_graph_with_history.h

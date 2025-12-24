@@ -53,6 +53,52 @@ class Graph_2 {
 	using Edge_handle = Edge_iterator;
 	using Edge_const_handle = Edge_const_iterator;
 
+    Graph_2& operator=(const Graph_2& other) {
+        if (this == &other) return *this;
+
+        m_vertices.clear();
+        m_edges.clear();
+
+        m_oriented = other.m_oriented;
+        m_sorted   = other.m_sorted;
+
+        std::unordered_map<const Vertex*, Vertex_handle> vmap;
+
+        for (auto vit = other.m_vertices.begin(); vit != other.m_vertices.end(); ++vit) {
+            m_vertices.emplace_back(*vit);
+            auto new_vit = std::prev(m_vertices.end());
+            new_vit->m_incident.clear();
+
+            vmap[&*vit] = new_vit;
+        }
+
+        std::unordered_map<const Edge*, Edge_handle> emap;
+
+        for (auto eit = other.m_edges.begin(); eit != other.m_edges.end(); ++eit) {
+            Vertex_handle new_source = vmap.at(&*eit->m_source);
+            Vertex_handle new_target = vmap.at(&*eit->m_target);
+
+            m_edges.emplace_back(
+                    new_source,
+                    new_target,
+                    eit->m_curve,
+                    eit->m_d
+            );
+
+            auto new_eit = std::prev(m_edges.end());
+            emap[&*eit] = new_eit;
+        }
+
+        for (auto vit = other.m_vertices.begin(); vit != other.m_vertices.end(); ++vit) {
+            Vertex_handle new_v = vmap.at(&*vit);
+            for (auto old_e : vit->m_incident) {
+                new_v->m_incident.push_back(emap.at(&*old_e));
+            }
+        }
+
+        return *this;
+    }
+
 	Vertex_iterator vertices_begin() { return m_vertices.begin(); }
 	Vertex_iterator vertices_end() { return m_vertices.end(); }
 	Edge_iterator edges_begin() { return m_edges.begin(); }
@@ -63,10 +109,10 @@ class Graph_2 {
 	Edge_const_iterator edges_begin() const { return m_edges.cbegin(); }
 	Edge_const_iterator edges_end() const { return m_edges.cend(); }
 
-    size_t number_of_vertices() {
+    size_t number_of_vertices() const {
         return m_vertices.size();
     }
-	size_t number_of_edges() {
+	size_t number_of_edges() const {
         return m_edges.size();
 	}
     void clear() {
@@ -272,7 +318,9 @@ class Graph_2_vertex {
 	using Edge = Graph_2_edge<VertexData, EdgeData, CurveTraits>;
 	using Graph = Graph_2<VertexData, EdgeData, CurveTraits>;
 	using Vertex_handle = Graph::Vertex_handle;
+    using Vertex_const_handle = Graph::Vertex_const_handle;
 	using Edge_handle = Graph::Edge_handle;
+    using Edge_const_handle = Graph::Edge_const_handle;
 	using Point_2 = CurveTraits::Point_2;
     using Vertex_data = VertexData;
     using Edge_data = EdgeData;
@@ -287,23 +335,52 @@ class Graph_2_vertex {
 	const Point_2& point() const {
 		return m_point;
 	}
-	int degree() {
+    Point_2& point() {
+        return m_point;
+    }
+	int degree() const {
 		return m_incident.size();
 	}
 	Edge_handle incoming() {
 		assert(degree() == 2);
 		return m_incident[0];
 	}
+    Edge_const_handle incoming() const {
+        assert(degree() == 2);
+        return m_incident[0];
+    }
 	Edge_handle outgoing() {
 		assert(degree() == 2);
 		return m_incident[1];
 	}
+    Edge_const_handle outgoing() const {
+        assert(degree() == 2);
+        return m_incident[1];
+    }
 	Vertex_handle prev() {
 		return incoming()->source();
 	}
+    Vertex_const_handle prev() const {
+        return incoming()->source();
+    }
 	Vertex_handle next() {
 		return outgoing()->target();
 	}
+    Vertex_const_handle next() const {
+        return outgoing()->target();
+    }
+    Edge_container::iterator incident_edges_begin() {
+        return m_incident.begin();
+    }
+    Edge_container::iterator incident_edges_end() {
+        return m_incident.end();
+    }
+    Edge_container::const_iterator incident_edges_begin() const {
+        return m_incident.cbegin();
+    }
+    Edge_container::const_iterator incident_edges_end() const {
+        return m_incident.cend();
+    }
 };
 
 template <class VertexData, class EdgeData, GraphCurveTraits_2 CurveTraits>
@@ -345,6 +422,7 @@ class Graph_2_edge {
 	Vertex_handle target() { return m_target; }
 	Vertex_const_handle source() const { return m_source; }
 	Vertex_const_handle target() const { return m_target; }
+    Curve_2& curve() { return m_curve; }
 	const Curve_2& curve() const { return m_curve; }
 	void reverse() {
 		std::swap(m_source, m_target);
@@ -353,11 +431,20 @@ class Graph_2_edge {
 	Edge_handle prev() {
 		return m_source->incoming();
 	}
+    Edge_const_handle prev() const {
+        return m_source->incoming();
+    }
 	Edge_handle next() {
 		return m_target->outgoing();
 	}
+    Edge_const_handle next() const {
+        return m_target->outgoing();
+    }
 	Edge_data& data() {
 		return m_d;
 	}
+    const Edge_data& data() const {
+        return m_d;
+    }
 };
 }
