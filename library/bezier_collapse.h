@@ -167,8 +167,6 @@ class BezierCollapse {
         // Because CGAL's Bézier functionality is a bit buggy (https://github.com/CGAL/cgal/issues/9176),
         // we use polyline approximations here for now.
 
-        std::cout << "Checking for sweeping-over: " << collapse->source()->point() << " -> " << collapse->target()->point() << std::endl;
-
         auto beforePl = beforeSpline.polyline(nSegs);
         auto afterPl = afterSpline.polyline(nSegs);
         std::vector<Arrangement<Exact>::X_monotone_curve_2> xmCurvesBefore;

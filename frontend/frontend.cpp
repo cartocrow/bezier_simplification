@@ -21,9 +21,10 @@
 void saveGraphIntoTopoSet(const BaseGraph& graph, TopoSet<Inexact>& topoSet) {
     std::unordered_set<const BaseGraph::Edge*> visited;
 
-    int nSegs = 31998 / graph.number_of_edges();
+    //int nSegs = std::max(5.0, (double)31998 / graph.number_of_edges());
 
     for (auto eit = graph.edges_begin(); eit != graph.edges_end(); ++eit) {
+        std::cout << "!" << std::endl;
         if (visited.contains(&*eit)) {
             continue;
         }
@@ -38,29 +39,53 @@ void saveGraphIntoTopoSet(const BaseGraph& graph, TopoSet<Inexact>& topoSet) {
         BaseGraph::Edge_const_handle end;
         if (current->prev() == initial) {
             end = initial;
-        } else {
+        }
+        else {
             current = initial;
-            while (current->source()->degree() == 2 && current->next() != initial) {
+            while (current->target()->degree() == 2 && current->next() != initial) {
                 current = current->next();
             }
             end = current;
         }
         auto arcIndex = start->data().index;
 
-        Polyline<Inexact> arc;
+        
 
-        start->curve().samplePoints(nSegs, std::back_inserter(arc));
+        int arcSize = 1;
+        
+
         visited.insert(&*start);
 
-        for (auto arcEit = start->next(); true; arcEit = arcEit->next()) {
-            visited.insert(&*arcEit);
-            arc.pop_back();
-            arcEit->curve().samplePoints(nSegs, std::back_inserter(arc));
-            if (arcEit == end) break;
+        if (start != end) {
+            int iterations = 0;
+            for (auto arcEit = start->next(); iterations < graph.number_of_edges(); arcEit = arcEit->next()) {
+                visited.insert(&*arcEit);
+                //arc.pop_back();
+                //arcEit->curve().samplePoints(nSegs, std::back_inserter(arc));
+                ++arcSize;
+                ++iterations;
+                if (arcEit == end) break;
+            }
+            if (iterations >= graph.number_of_edges()) {
+                throw std::runtime_error("Problem in traversing graph to save it into TopoSet");
+            }
         }
+
+        int nPoints = std::max(std::min(1000.0, 31998.0 / arcSize), 5.0);
+
+        Polyline<Inexact> arc;
+        start->curve().samplePoints(nPoints, std::back_inserter(arc));
+
+        if (start != end) {
+            for (auto arcEit = start->next(); true; arcEit = arcEit->next()) {
+                arc.pop_back();
+                arcEit->curve().samplePoints(nPoints, std::back_inserter(arc));
+                if (arcEit == end) break;
+            }
+        }
+
         topoSet.arcs[arcIndex] = arc;
     }
-//    graph.edges_begin()
 }
 
 void BezierSimplificationDemo::loadInput(const std::filesystem::path& path) {
@@ -107,7 +132,6 @@ void BezierSimplificationDemo::loadInput(const std::filesystem::path& path) {
 
         for (int i = 0; i < m_toposet.arcs.size(); ++i) {
             auto& arc = m_toposet.arcs[i];
-            std::cout << arc.vertex(0) << " =? " << arc.vertex(arc.size() - 1) << std::endl;
             for (auto eit = arc.edges_begin(); eit != arc.edges_end(); ++eit) {
                 auto sourceV = getVertex(m_transform.transform(eit->source()));
                 auto targetV = getVertex(m_transform.transform(eit->target()));
@@ -254,7 +278,7 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
     auto* showDebugInfo = new QCheckBox("Show debug info");
     vLayout->addWidget(showDebugInfo);
 
-    auto* queueInfo = new QLabel("<h3>Queue</h3>");
+    /*auto* queueInfo = new QLabel("<h3>Queue</h3>");
     vLayout->addWidget(queueInfo);
     auto* scrollArea = new QScrollArea();
     auto* queueLabel = new QLabel();
@@ -264,7 +288,7 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
     scrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
     scrollArea->setAlignment(Qt::AlignTop);
     queueLabel->setAlignment(Qt::AlignTop);
-    vLayout->addWidget(scrollArea);
+    vLayout->addWidget(scrollArea);*/
 
     connect(showEdgeDirection, &QCheckBox::stateChanged, [this]() {
         m_renderer->repaint();
@@ -303,8 +327,8 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
         repaint();
     });
 
-    auto updateQueueInfo = [this, queueLabel]() {
-        std::stringstream ss;
+    auto updateQueueInfo = [this/*, queueLabel*/]() {
+        /*std::stringstream ss;
         if (!m_collapse.m_q.empty()) {
             auto top = m_collapse.m_q.pop();
             ss << "> " << top->data().collapse->cost << "\n";
@@ -321,7 +345,7 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
                 ss << cost << "\n";
             }
         }
-        queueLabel->setText(QString::fromStdString(ss.str()));
+        queueLabel->setText(QString::fromStdString(ss.str()));*/
     };
 
     auto updateComplexityInfo = [complexityLabel, complexity, complexityLog, desiredComplexity, this]() {

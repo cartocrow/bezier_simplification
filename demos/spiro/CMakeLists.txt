@@ -17,7 +17,6 @@ target_link_libraries(
     cartocrow::renderer
     cartocrow::reader
 
-    spiro
     curved_simplification
 )
 

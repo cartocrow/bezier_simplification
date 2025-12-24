@@ -225,13 +225,6 @@ struct TopoSet {
             // Can be optimized by changing the start of the closed arc to a cut point.
         }
 
-        for (const auto& arc : arcs) {
-            std::cout << "===" << std::endl;
-            for (auto vit = arc.vertices_begin(); vit != arc.vertices_end(); ++vit) {
-                std::cout << *vit << std::endl;
-            }
-        }
-
         for (auto& feature : features) {
             PolygonSetGeometry& polygonSetGeometry = get<PolygonSetGeometry>(feature.geometry);
             for (auto& polygonWithHoles : polygonSetGeometry.arcs) {

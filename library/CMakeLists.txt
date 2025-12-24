@@ -2,7 +2,6 @@ set(SOURCES
     steven_bezier_collapse.cpp
     fit_cubic.cpp
     spiro_helpers/bezctx_cbs.cpp
-    core/topo_set.cpp
 )
 set(HEADERS
     common.h
@@ -22,6 +21,13 @@ set(HEADERS
     spiro_helpers/spiro_helpers.h
     bezier_curve_quad_tree.h
     utils.h
+
+    spiro_helpers/spiro/bezctx.h
+    spiro_helpers/spiro/bezctx_intf.h
+    spiro_helpers/spiro/spiro-config.h
+    spiro_helpers/spiro/spiro.h
+    spiro_helpers/spiro/spiroentrypoints.h
+    spiro_helpers/spiro/spiro_intf.h
 )
 
 add_library(curved_simplification ${SOURCES})
@@ -29,7 +35,6 @@ target_link_libraries(curved_simplification
         PUBLIC
         cartocrow::core
         cartocrow::renderer
-        spiro
 )
 
 install(FILES ${HEADERS} DESTINATION ${CARTOCROW_INSTALL_DIR}/curved_simplification)

@@ -15,7 +15,7 @@ CubicBezierSpline spiro(InputIterator begin, InputIterator end, bool closed) {
 
     auto bc = new_bezctx_cbs();
     auto ncq = 0;
-    SpiroCPsToBezier2(points.begin().base(),points.size(), ncq, closed, bc);
+    SpiroCPsToBezier2(points.data(), points.size(), ncq, closed, bc);
     return bezctx_cbs_close(bc);
 }
 }

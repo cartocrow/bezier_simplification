@@ -2,7 +2,51 @@
 #include <cartocrow/reader/gdal_conversion.h>
 #include <cartocrow/core/transform_helpers.h>
 
+#include <cartocrow/renderer/ipe_renderer.h>
+
+using namespace cartocrow::renderer;
+
 namespace cartocrow::curved_simplification {
+OGRLinearRing polygonToOGRLinearRingT(const Polygon<Inexact>& polygon, const CGAL::Aff_transformation_2<Inexact>& trans) {
+    OGRLinearRing ring;
+    for (const auto& v : polygon.vertices()) {
+        auto v_ = trans.transform(v);
+        ring.addPoint(v_.x(), v_.y());
+    }
+    auto v_ = trans.transform(polygon.vertices().front());
+    ring.addPoint(v_.x(), v_.y());
+
+    return ring;
+}
+
+OGRPolygon polygonWithHolesToOGRPolygonT(const PolygonWithHoles<Inexact>& polygon, const CGAL::Aff_transformation_2<Inexact>& trans) {
+    assert(!polygon.is_unbounded());
+    auto outerRing = polygonToOGRLinearRingT(polygon.outer_boundary(), trans);
+    std::vector<OGRLinearRing> holeRings;
+    for (const auto& h : polygon.holes()) {
+        holeRings.push_back(polygonToOGRLinearRingT(h, trans));
+    }
+    OGRPolygon ogrPolygon;
+    ogrPolygon.addRing(&outerRing);
+    for (auto& hr : holeRings) {
+        ogrPolygon.addRing(&hr);
+    }
+    return ogrPolygon;
+}
+
+OGRMultiPolygon polygonSetToOGRMultiPolygonT(const PolygonSet<Inexact>& polygonSet, const CGAL::Aff_transformation_2<Inexact>& trans) {
+    std::vector<PolygonWithHoles<Inexact>> pgns;
+    polygonSet.polygons_with_holes(std::back_inserter(pgns));
+
+    OGRMultiPolygon ogrMultiPolygon;
+    for (const auto& pgn : pgns) {
+        auto ogrPolygon = polygonWithHolesToOGRPolygonT(pgn, trans);
+        ogrMultiPolygon.addGeometry(&ogrPolygon);
+    }
+
+    return ogrMultiPolygon;
+}
+
 Straight_graph_2<std::monostate, std::monostate, Inexact> readGraphUsingGDAL(const std::filesystem::path& path) {
     GDALAllRegister();
     GDALDataset *poDS;
@@ -228,14 +272,7 @@ void exportTopoSetUsingGDAL(const std::filesystem::path& path, const TopoSet<Ine
         for (const auto &feature: topoSet.features) {
             auto psg = get<TopoSet<Inexact>::PolygonSetGeometry>(feature.geometry);
             auto ps = psg.getGeometry(topoSet);
-            PolygonSet <Inexact> transformed;
-            std::vector <PolygonWithHoles<Inexact>> pgsWHs;
-            ps.polygons_with_holes(std::back_inserter(pgsWHs));
-            for (const auto &pgnWH: pgsWHs) {
-                auto pgnWHT = transform(trans, pgnWH);
-                transformed.insert(pgnWHT);
-            }
-            auto mPgn = polygonSetToOGRMultiPolygon(transformed);
+            auto mPgn = polygonSetToOGRMultiPolygonT(ps, trans);
             OGRFeature *poFeature;
 
             poFeature = OGRFeature::CreateFeature(poLayer->GetLayerDefn());
@@ -261,6 +298,12 @@ void exportTopoSetUsingGDAL(const std::filesystem::path& path, const TopoSet<Ine
             OGRFeature::DestroyFeature(poFeature);
         }
     } else {
+        /*OGRFieldDefn oField("stacking", OFTInteger);
+        if (poLayer->CreateField(&oField) != OGRERR_NONE) {
+            printf("Creating field failed.\n");
+            exit(1);
+        }*/
+
         std::vector<std::pair<PolygonSet<Inexact>, RegionAttributes>> polygonSets;
 
         for (const auto &feature: topoSet.features) {
@@ -276,7 +319,10 @@ void exportTopoSetUsingGDAL(const std::filesystem::path& path, const TopoSet<Ine
             polygonSets.emplace_back(transformed, feature.attributes);
         }
 
-        std::sort(polygonSets.begin(), polygonSets.end(), [](const auto& a, const auto& b) {
+        /*IpeRenderer ipeRenderer;*/
+
+        /*std::sort(polygonSets.begin(), polygonSets.end(), [&ipeRenderer](const auto& a, const auto& b) {
+            std::cout << "===" << std::endl;
             const PolygonSet<Inexact>& pgs1 = a.first;
             const PolygonSet<Inexact>& pgs2 = b.first;
             std::vector<PolygonWithHoles<Inexact>> pgns1;
@@ -284,9 +330,29 @@ void exportTopoSetUsingGDAL(const std::filesystem::path& path, const TopoSet<Ine
             std::vector<PolygonWithHoles<Inexact>> pgns2;
             pgs2.polygons_with_holes(std::back_inserter(pgns2));
 
-            return pgns1[0].outer_boundary().has_on_bounded_side(pgns2[0].outer_boundary().vertex(0));
-        });
+            for (const auto& pgn1 : pgns1) {
+                for (const auto& pgn2 : pgns2) {
+                    ipeRenderer.addPainting([pgn1, pgn2](GeometryRenderer& renderer) {
+                        renderer.setStroke(Color(255, 0, 0), 1.0);
+                        renderer.draw(pgn1);
+                        renderer.setStroke(Color(0, 0, 255), 1.0);
+                        renderer.draw(pgn2);
+                        std::stringstream ss;
+                        ss << "inside: " << (pgn1.outer_boundary().has_on_bounded_side(pgn2.outer_boundary().vertex(0)));
+                        renderer.drawText({ 0, 0 }, ss.str());
+                     });
+                    ipeRenderer.nextPage();
+                    if (pgn1.outer_boundary().has_on_bounded_side(pgn2.outer_boundary().vertex(0))) return true;
+                }
+            }
 
+            return false;
+           
+        });*/
+
+        //ipeRenderer.save("debugging_nesting.ipe");
+
+        int index = 0;
         for (const auto& ps : polygonSets) {
             auto mPgn = polygonSetToOGRMultiPolygon(ps.first);
             OGRFeature *poFeature;
@@ -304,6 +370,8 @@ void exportTopoSetUsingGDAL(const std::filesystem::path& path, const TopoSet<Ine
                 }
             }
 
+            //poFeature->SetField("stacking", index);
+
             poFeature->SetGeometry(&mPgn);
 
             if (poLayer->CreateFeature(poFeature) != OGRERR_NONE) {
@@ -312,6 +380,8 @@ void exportTopoSetUsingGDAL(const std::filesystem::path& path, const TopoSet<Ine
             }
 
             OGRFeature::DestroyFeature(poFeature);
+
+            ++index;
         }
     }
     GDALClose( poDS );

@@ -1,6 +1,5 @@
 #include "spiro_demo.h"
 
-#include <spiroentrypoints.h>
 #include <QApplication>
 #include <QDockWidget>
 #include <QVBoxLayout>

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <cartocrow/core/cubic_bezier.h>
-#include <spiroentrypoints.h>
+#include "spiro/spiroentrypoints.h"
 
 namespace cartocrow {
 typedef struct {
