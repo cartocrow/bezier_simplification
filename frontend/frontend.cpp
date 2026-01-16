@@ -13,7 +13,7 @@
 
 #include "double_slider.h"
 
-#include "read_graph_gdal.h"
+#include "library/read_graph_gdal.h"
 #include "read_ipe_bezier_spline.h"
 
 #include <cartocrow/core/transform_helpers.h>

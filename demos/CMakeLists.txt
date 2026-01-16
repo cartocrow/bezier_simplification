@@ -1,3 +1,5 @@
 add_subdirectory(fit_cubic)
 add_subdirectory(spiro)
 add_subdirectory(toposet)
+add_subdirectory(min_dist)
+add_subdirectory(intersection_helpers)

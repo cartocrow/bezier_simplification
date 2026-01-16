@@ -2,6 +2,7 @@ set(SOURCES
     steven_bezier_collapse.cpp
     fit_cubic.cpp
     spiro_helpers/bezctx_cbs.cpp
+    read_graph_gdal.cpp
 )
 set(HEADERS
     common.h
@@ -21,6 +22,10 @@ set(HEADERS
     spiro_helpers/spiro_helpers.h
     bezier_curve_quad_tree.h
     utils.h
+    minimum_distance.h
+    read_graph_gdal.h
+    conic_types.h
+    intersection_helpers.h
 
     spiro_helpers/spiro/bezctx.h
     spiro_helpers/spiro/bezctx_intf.h
@@ -35,6 +40,8 @@ target_link_libraries(curved_simplification
         PUBLIC
         cartocrow::core
         cartocrow::renderer
+        cartocrow::reader
+        spiro
 )
 
 install(FILES ${HEADERS} DESTINATION ${CARTOCROW_INSTALL_DIR}/curved_simplification)
