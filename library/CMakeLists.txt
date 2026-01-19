@@ -3,6 +3,7 @@ set(SOURCES
     fit_cubic.cpp
     spiro_helpers/bezctx_cbs.cpp
     read_graph_gdal.cpp
+    intersection_helpers.cpp
 )
 set(HEADERS
     common.h
@@ -41,6 +42,7 @@ target_link_libraries(curved_simplification
         cartocrow::core
         cartocrow::renderer
         cartocrow::reader
+        cartocrow::circle_segment_helpers
         spiro
 )
 

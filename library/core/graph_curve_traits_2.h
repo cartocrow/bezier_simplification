@@ -5,7 +5,7 @@
 namespace cartocrow {
 template <class CST>
 concept GraphCurveTraits_2 =
-	requires(CST cst, typename CST::Curve_2 curve) {
+	requires(CST cst, typename CST::Curve_2 curve, const CGAL::Aff_transformation_2<typename CST::Kernel>& trans) {
         typename CST::Curve_2;
 	    typename CST::Point_2;
         typename CST::Kernel;
@@ -21,5 +21,9 @@ concept GraphCurveTraits_2 =
 	    {
 		    CST::reversed(curve)
 	    } -> std::convertible_to<typename CST::Curve_2>;
+
+        {
+            CST::transform(curve, trans)
+        } -> std::convertible_to<typename CST::Curve_2>;
     };
 }

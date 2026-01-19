@@ -13,6 +13,10 @@ struct Graph_Bezier_curve_traits_2 {
         return curve.reversed();
     }
 
+    static Curve_2 transform(const Curve_2& curve, const CGAL::Aff_transformation_2<Inexact>& trans) {
+        return curve.transform(trans);
+    }
+
     static_assert(GraphCurveTraits_2<Graph_Bezier_curve_traits_2>);
 };
 }

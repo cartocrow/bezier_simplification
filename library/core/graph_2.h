@@ -99,6 +99,50 @@ class Graph_2 {
         return *this;
     }
 
+    Graph_2 transform(CGAL::Aff_transformation_2<Kernel> trans) const {
+        Graph_2 transformed;
+
+        transformed.m_oriented = m_oriented;
+        transformed.m_sorted   = m_sorted;
+
+        std::unordered_map<const Vertex*, Vertex_handle> vmap;
+
+        for (auto vit = m_vertices.begin(); vit != m_vertices.end(); ++vit) {
+            transformed.m_vertices.emplace_back(*vit);
+            auto new_vit = std::prev(transformed.m_vertices.end());
+            new_vit->point() = new_vit->point().transform(trans);
+            new_vit->m_incident.clear();
+
+            vmap[&*vit] = new_vit;
+        }
+
+        std::unordered_map<const Edge*, Edge_handle> emap;
+
+        for (auto eit = m_edges.begin(); eit != m_edges.end(); ++eit) {
+            Vertex_handle new_source = vmap.at(&*eit->m_source);
+            Vertex_handle new_target = vmap.at(&*eit->m_target);
+
+            transformed.m_edges.emplace_back(
+                    new_source,
+                    new_target,
+                    Curve_traits::transform(eit->m_curve, trans),
+                    eit->m_d
+            );
+
+            auto new_eit = std::prev(transformed.m_edges.end());
+            emap[&*eit] = new_eit;
+        }
+
+        for (auto vit = m_vertices.begin(); vit != m_vertices.end(); ++vit) {
+            Vertex_handle new_v = vmap.at(&*vit);
+            for (auto old_e : vit->m_incident) {
+                new_v->m_incident.push_back(emap.at(&*old_e));
+            }
+        }
+
+        return transformed;
+    }
+
 	Vertex_iterator vertices_begin() { return m_vertices.begin(); }
 	Vertex_iterator vertices_end() { return m_vertices.end(); }
 	Edge_iterator edges_begin() { return m_edges.begin(); }
