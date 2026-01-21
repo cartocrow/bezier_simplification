@@ -16,6 +16,7 @@
 #include "library/read_graph_gdal.h"
 #include "read_ipe_bezier_spline.h"
 
+#include <cartocrow/renderer/voronoi_drawer.h>
 #include <cartocrow/core/transform_helpers.h>
 
 void saveGraphIntoTopoSet(const BaseGraph& graph, TopoSet<Inexact>& topoSet) {
@@ -24,7 +25,6 @@ void saveGraphIntoTopoSet(const BaseGraph& graph, TopoSet<Inexact>& topoSet) {
     //int nSegs = std::max(5.0, (double)31998 / graph.number_of_edges());
 
     for (auto eit = graph.edges_begin(); eit != graph.edges_end(); ++eit) {
-        std::cout << "!" << std::endl;
         if (visited.contains(&*eit)) {
             continue;
         }
@@ -171,7 +171,7 @@ void BezierSimplificationDemo::loadInput(const std::filesystem::path& path) {
     m_renderer->fitInView(CGAL::bbox_2(points.begin(), points.end()));
 }
 
-BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_collapse(m_graph, Traits()) {
+BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_collapse(m_graph, Traits()), m_forcer(m_approxGraph, 1.0) {
 	setWindowTitle("Bézier simplification");
 	m_renderer = new GeometryWidget();
 	m_renderer->setDrawAxes(false);
@@ -263,6 +263,26 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
     complexityLog->setOrientation(Qt::Horizontal);
     complexityLog->setPrecision(10000);
     vLayout->addWidget(complexityLog);
+
+    auto* minimumDistanceSettings = new QLabel("<h3>Minimum distance</h3>");
+    vLayout->addWidget(minimumDistanceSettings);
+
+    m_minDist = new DoubleSlider(Qt::Horizontal);
+    m_minDist->setMaximum(30);
+    m_minDist->setMinimum(0);
+    m_minDist->setValue(6);
+
+    m_forcer.m_requiredMinDist = m_minDist->value();
+    vLayout->addWidget(m_minDist);
+
+    auto* mdInitializeButton = new QPushButton("Initialize / reset");
+    vLayout->addWidget(mdInitializeButton);
+    auto* mdStepButton = new QPushButton("Step");
+    vLayout->addWidget(mdStepButton);
+    auto* mdStep100Button = new QPushButton("Step (x100)");
+    vLayout->addWidget(mdStep100Button);
+    auto* mdReconstructButton = new QPushButton("Reconstruct");
+    vLayout->addWidget(mdReconstructButton);
 
     auto* drawSettings = new QLabel("<h3>Drawing</h3>");
     vLayout->addWidget(drawSettings);
@@ -475,6 +495,38 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
         m_renderer->repaint();
     });
 
+    connect(m_minDist, &DoubleSlider::valueChanged, [this]() {
+        m_renderer->repaint();
+        m_forcer.m_requiredMinDist = m_minDist->value();
+        m_forcer.recomputeAuxiliary();
+    });
+
+    connect(mdInitializeButton, &QPushButton::clicked, [this]() {
+        m_forcer.m_g = approximateBezierGraph(m_baseGraph, std::min(20.0, 1000000.0 / m_baseGraph.number_of_edges()));
+        m_forcer.initialize();
+        m_renderer->repaint();
+    });
+
+    connect(mdStepButton, &QPushButton::clicked, [this]() {
+        m_forcer.step();
+        m_renderer->repaint();
+    });
+
+    connect(mdStep100Button, &QPushButton::clicked, [this]() {
+        for (int i = 0; i < 100; ++i) {
+            m_forcer.step();
+        }
+        m_renderer->repaint();
+    });
+
+    connect(mdReconstructButton, &QPushButton::clicked, [this]() {
+        m_baseGraph = reconstructBezierGraph(m_forcer.m_g);
+        m_forcer.m_g.clear();
+        m_forcer.m_withinDistEdges.clear();
+        m_forcer.m_delaunay.clear();
+        m_renderer->repaint();
+    });
+
     connect(editControlPoints, &QCheckBox::stateChanged, [this]() {
         // todo
 //        if (!m_backup.has_value())
@@ -649,6 +701,12 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
 //        }
 //    }, "Curvature");
 
+    m_renderer->addPainting([this](GeometryRenderer& renderer) {
+        renderer.setMode(GeometryRenderer::fill);
+        renderer.setFill(Color(230, 230, 230));
+        renderer.draw(Circle<Inexact>(m_renderer->mousePosition(), m_minDist->value() * m_minDist->value()));
+    }, "Min. dist. disk");
+
 	m_renderer->addPainting([this, showNewVertices, showNewControlPoints, showEdgeDirection, showDebugInfo](GeometryRenderer& renderer) {
 	  	renderer.setMode(GeometryRenderer::stroke);
 		renderer.setStroke(Color(0, 0, 0), 2.0);
@@ -690,6 +748,37 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
             }
         }
 	}, "Simplification");
+
+    m_renderer->addPainting([this](GeometryRenderer& renderer) {
+        renderer.setMode(GeometryRenderer::stroke);
+        auto voronoiDrawer = VoronoiDrawer<MinimumDistanceForcer<std::monostate, std::monostate>::Gt>(&renderer);
+        for (auto eit = m_forcer.m_delaunay.finite_edges_begin(); eit != m_forcer.m_delaunay.finite_edges_end(); ++eit) {
+            auto [ps, qs] = m_forcer.defining_storage_sites(*eit);
+            if (m_forcer.withinDistanceAlongIsoline(ps, qs, 2 * m_forcer.m_requiredMinDist)) {
+                continue;
+            }
+
+            renderer.setStroke(Color{210, 210, 210}, 1.0);
+            draw_dual_edge(m_forcer.m_delaunay, *eit, voronoiDrawer);
+        }
+
+        for (const auto& [vEdge, dEdge] : m_forcer.m_withinDistEdges) {
+            std::visit([&](const auto &geom) {
+                renderer.setStroke(Color{255, 50, 50}, 2.0);
+                voronoiDrawer << geom;
+            }, vEdge);
+        }
+    }, "Segment Voronoi diagram");
+
+    m_renderer->addPainting([this](GeometryRenderer& renderer) {
+        renderer.setStroke(Color{0, 0, 0}, 2.0);
+        for (auto eit = m_forcer.m_g.edges_begin(); eit != m_forcer.m_g.edges_end(); ++eit) {
+            renderer.draw(eit->curve());
+        }
+        for (auto vit = m_forcer.m_g.vertices_begin(); vit != m_forcer.m_g.vertices_end(); ++vit) {
+            renderer.draw(vit->point());
+        }
+    }, "Linearized");
 
     m_renderer->addPainting([this](GeometryRenderer& renderer) {
         if (!m_debugEdge.has_value()) return;

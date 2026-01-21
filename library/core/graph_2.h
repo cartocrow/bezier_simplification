@@ -374,6 +374,7 @@ class Graph_2_vertex {
 	using Edge_container = std::vector<Edge_handle>;
 	Point_2 m_point;
 	Edge_container m_incident = Edge_container();
+    Vertex_data m_data;
 
   public:
 	const Point_2& point() const {
@@ -424,6 +425,12 @@ class Graph_2_vertex {
     }
     Edge_container::const_iterator incident_edges_end() const {
         return m_incident.cend();
+    }
+    Vertex_data& data() {
+        return m_data;
+    }
+    const Vertex_data& data() const {
+        return m_data;
     }
 };
 

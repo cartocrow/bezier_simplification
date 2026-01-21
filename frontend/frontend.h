@@ -1,10 +1,14 @@
 #pragma once
 
 #include <cartocrow/renderer/geometry_widget.h>
+//#include <cartocrow/widgets/double_slider.h>
+#include "double_slider.h"
 #include "library/core/bezier_graph_2.h"
 #include "library/core/topo_set.h"
 #include "library/bezier_collapse.h"
 #include "library/steven_bezier_collapse.h"
+#include "library/minimum_distance.h"
+
 #include <QMainWindow>
 
 #include <filesystem>
@@ -17,6 +21,7 @@ using namespace cartocrow::curved_simplification;
 
 using Graph = BezierCollapseGraphWithHistoryAndIndex;
 using BaseGraph = Graph::BaseGraph;
+using ApproximatedGraph = ApproximatedBezierGraph<BaseGraph>;
 using Traits = StevenBCTraits<Graph>;
 using Collapse = BezierCollapse<Graph, Traits>;
 using Edge_handle = Graph::Edge_handle;
@@ -36,6 +41,9 @@ class BezierSimplificationDemo : public QMainWindow {
     TopoSet<Inexact> m_toposet;
     CGAL::Aff_transformation_2<Inexact> m_transform;
     OGRSpatialReference m_spatialRef;
+    DoubleSlider* m_minDist;
+    MinimumDistanceForcer<typename ApproximatedGraph::Vertex_data, typename ApproximatedGraph::Edge_data> m_forcer;
+    ApproximatedGraph m_approxGraph;
 
     std::optional<BaseGraph> m_backup;
 

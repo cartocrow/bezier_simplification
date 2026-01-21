@@ -8,11 +8,13 @@ template<class G>
 concept Graph2Like =
 requires(G g) {
     typename G::Vertex;
+    typename G::Vertex_data;
     typename G::Vertex_handle;
     typename G::Vertex_const_handle;
     typename G::Vertex_iterator;
     typename G::Vertex_const_iterator;
     typename G::Edge;
+    typename G::Edge_data;
     typename G::Edge_handle;
     typename G::Edge_const_handle;
     typename G::Edge_iterator;

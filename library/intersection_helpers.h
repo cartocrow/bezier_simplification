@@ -81,6 +81,16 @@ void intersections(const Segment<Inexact>& s, const Circle<Inexact>& circle, Out
     }
 }
 
+template <class Gt, class OutputIterator>
+void approximateIntersections(const CGAL::Parabola_segment_2<Gt>& ps, const Circle<Inexact>& circleInexact, OutputIterator out, double step) {
+    std::vector<Point<Inexact>> points;
+    ps.generate_points(points, step);
+    for (int i = 0; i < points.size() - 1; ++i) {
+        Segment<Inexact> seg(points[i], points[i+1]);
+        intersections(seg, circleInexact, out);
+    }
+}
+
 std::optional<Segment<Inexact>> intersection(const Segment<Inexact>& s, const Circle<Inexact>& circle);
 
 /// Gt must use Point<Inexact>
@@ -129,5 +139,52 @@ std::optional<CGAL::Parabola_segment_2<Gt>> intersection(const CGAL::Parabola_se
     std::cerr << "Unexpected number of intersections!" << std::endl;
     return ps;
 //    throw std::runtime_error("Unexpected number of intersections!");
+}
+
+/// Gt must use Point<Inexact>
+/// Returns the part of the parabola segment that lies inside the circle.
+template <class Gt>
+std::optional<CGAL::Parabola_segment_2<Gt>> approximateIntersection(const CGAL::Parabola_segment_2<Gt>& ps, const Circle<Inexact>& circle, double step) {
+    std::vector<Point<Inexact>> inters;
+    approximateIntersections(ps, circle, std::back_inserter(inters), step);
+
+    auto p1Kept = circle.has_on_bounded_side(ps.p1);
+    auto p2Kept = circle.has_on_bounded_side(ps.p2);
+
+    if (inters.empty()) {
+        if (!p1Kept) return std::nullopt;
+        assert(p1Kept && p2Kept);
+        return ps;
+    }
+
+    if (inters.size() == 1) {
+        if (p1Kept) {
+            assert(!p2Kept);
+            return CGAL::Parabola_segment_2<Gt>(ps.center(), ps.line(), ps.p1, inters[0]);
+        }
+        if (p2Kept) {
+            assert(!p1Kept);
+            return CGAL::Parabola_segment_2<Gt>(ps.center(), ps.line(), inters[0], ps.p2);
+        }
+    }
+
+    if (inters.size() == 2) {
+        auto& directrix = ps.line();
+        auto proj1I = directrix.projection(inters[0]);
+        auto proj2I = directrix.projection(inters[1]);
+        auto proj1E = directrix.projection(approximate(ps.p1));
+        auto proj2E = directrix.projection(approximate(ps.p2));
+        bool needToSwap = (proj2I - proj1I) * (proj2E - proj1E) < 0;
+        auto newP1 = approximate(inters[0]);
+        auto newP2 = approximate(inters[1]);
+        if (needToSwap) {
+            std::swap(newP1, newP2);
+        }
+
+        return CGAL::Parabola_segment_2<Gt>(ps.center(), ps.line(), newP1, newP2);
+    }
+
+    std::cerr << "Unexpected number of intersections!" << std::endl;
+    return ps;
 }
 }

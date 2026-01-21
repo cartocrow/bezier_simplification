@@ -230,11 +230,13 @@ class CollapseHistoryGraphAdaptor {
   public:
     using Curve_traits = Graph::Curve_traits;
     using Vertex = Graph::Vertex;
+    using Vertex_data = Graph::Vertex_data;
     using Vertex_handle = Graph::Vertex_handle;
     using Vertex_const_handle = Graph::Vertex_const_handle;
     using Vertex_iterator = Graph::Vertex_iterator;
     using Vertex_const_iterator = Graph::Vertex_const_iterator;
     using Edge = Graph::Edge;
+    using Edge_data = Graph::Edge_data;
     using Edge_handle = Graph::Edge_handle;
     using Edge_const_handle = Graph::Edge_const_handle;
     using Edge_iterator = Graph::Edge_iterator;

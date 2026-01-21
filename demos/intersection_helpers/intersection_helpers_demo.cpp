@@ -49,7 +49,7 @@ IntersectionHelpersDemo::IntersectionHelpersDemo() {
         renderer.setMode(GeometryRenderer::stroke | GeometryRenderer::fill);
         renderer.setFill(Color(200, 200, 200));
         renderer.setMode(GeometryRenderer::stroke);
-        auto piece = intersection(paraSeg, *m_circle);
+        auto piece = approximateIntersection(paraSeg, *m_circle, 0.01);
         auto segPiece = intersection(seg, *m_circle);
         renderer.draw(*m_circle);
         if (piece.has_value()) {
@@ -62,7 +62,7 @@ IntersectionHelpersDemo::IntersectionHelpersDemo() {
         }
 
         std::vector<Point<Inexact>> inters;
-        intersections(paraSeg, *m_circle, std::back_inserter(inters));
+        approximateIntersections(paraSeg, *m_circle, std::back_inserter(inters), 0.01);
         intersections(seg, *m_circle, std::back_inserter(inters));
         for (const auto& inter : inters) {
             renderer.draw(inter);
