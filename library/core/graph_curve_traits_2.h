@@ -25,5 +25,9 @@ concept GraphCurveTraits_2 =
         {
             CST::transform(curve, trans)
         } -> std::convertible_to<typename CST::Curve_2>;
+
+        {
+            CST::bbox(curve)
+        } -> std::convertible_to<CGAL::Bbox_2>;
     };
 }

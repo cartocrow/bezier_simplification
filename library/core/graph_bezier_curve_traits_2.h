@@ -17,6 +17,10 @@ struct Graph_Bezier_curve_traits_2 {
         return curve.transform(trans);
     }
 
+    static CGAL::Bbox_2 bbox(const Curve_2& curve) {
+        return curve.bbox();
+    }
+
     static_assert(GraphCurveTraits_2<Graph_Bezier_curve_traits_2>);
 };
 }

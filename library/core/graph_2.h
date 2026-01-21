@@ -350,6 +350,21 @@ class Graph_2 {
         assert(!m_sorted || verify_sorted());
         return m_sorted;
     }
+
+    CGAL::Bbox_2 bbox() {
+        if (m_vertices.empty()) {
+            return {0, 0, 0, 0};
+        }
+        std::vector<Point<Inexact>> points;
+        for (const auto& v: m_vertices) {
+            points.push_back(v.point());
+        }
+        auto box = CGAL::bbox_2(points.begin(), points.end());
+        for (const auto& e: m_edges) {
+            box = box + Curve_traits::bbox(e.curve());
+        }
+        return box;
+    }
 };
 
 template <class VertexData, class EdgeData, GraphCurveTraits_2 CurveTraits>

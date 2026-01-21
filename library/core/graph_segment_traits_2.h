@@ -19,6 +19,9 @@ struct Graph_segment_curve_traits_2 {
     static Curve_2 transform(const Curve_2& curve, const CGAL::Aff_transformation_2<Kernel>& trans) {
         return curve.transform(trans);
     }
+    static CGAL::Bbox_2 bbox(const Curve_2& curve) {
+        return curve.bbox();
+    }
 };
 static_assert(GraphCurveTraits_2<Graph_segment_curve_traits_2<CGAL::Epick>>);
 static_assert(GraphCurveTraits_2<Graph_segment_curve_traits_2<CGAL::Epeck>>);
