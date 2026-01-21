@@ -117,14 +117,11 @@ BezierGraph reconstructBezierGraph(const ApproximatedBezierGraph<BezierGraph>& s
                 bool changed = false;
                 auto current = eh;
                 while(!current->target()->data().originalVertex.has_value()) {
-                    std::cout << "current: " << current->source()->point() << "  ->  " << current->target()->point() << std::endl;
-                    std::cout << "otherVertex: " << otherVertex->point() << std::endl;
                     current = current->next();
                     points.push_back(current->target()->point());
                     if (current->data().changed) {
                         changed = true;
                     }
-                    std::cout << "new current: " << current->source()->point() << "  ->  " << current->target()->point() << std::endl;
                 }
 
                 const CubicBezierCurve& ogCurve = ogEdge->curve();
@@ -332,6 +329,8 @@ class MinimumDistanceForcer {
 
         if (auto sP = std::get_if<Segment<Inexact>>(&vEdge)) {
             auto& s = *sP;
+            std::cout << s.source() << " -> " << s.target() << std::endl;
+            if (!isfinite(s.source().x()) || !isfinite(s.target().x())) return std::nullopt;
             if (p.is_point() && q.is_point()) {
                 Circle<Inexact> circ(p.point(), dist * dist, CGAL::COUNTERCLOCKWISE);
                 return intersection(s, circ);
@@ -491,6 +490,7 @@ class MinimumDistanceForcer {
     SDG m_delaunay;
     double m_requiredMinDist = 0;
     StraightGraph& m_g;
+    Box m_bbox;
     void recomputeDelaunay() {
         m_delaunay.clear();
         for (auto eit = m_g.edges_begin(); eit != m_g.edges_end(); ++eit) {
@@ -532,8 +532,9 @@ class MinimumDistanceForcer {
     MinimumDistanceForcer(StraightGraph& graph, double minDist) : m_g(graph), m_requiredMinDist(minDist) {};
 
     void initialize() {
+        m_bbox = m_g.bbox();
         recomputeDelaunay();
-        recomputeAuxiliary();
+//        recomputeAuxiliary();
     }
 
     void step() {

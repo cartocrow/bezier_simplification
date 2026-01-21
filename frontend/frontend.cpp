@@ -6,6 +6,7 @@
 #include <QPushButton>
 #include <QCheckBox>
 #include <QSpinBox>
+#include <QImageReader>
 #include <QLabel>
 #include <QScrollArea>
 #include <QFileDialog>
@@ -164,11 +165,10 @@ void BezierSimplificationDemo::loadInput(const std::filesystem::path& path) {
     m_original = m_baseGraph;
     m_collapse.initialize();
 
-    std::vector<Point<Inexact>> points;
-    for (auto vit = m_baseGraph.vertices_begin(); vit != m_baseGraph.vertices_end(); ++vit) {
-        points.push_back(vit->point());
-    }
-    m_renderer->fitInView(CGAL::bbox_2(points.begin(), points.end()));
+    auto bbox = m_baseGraph.bbox();
+    m_referencePolygon = bbox;
+
+    m_renderer->fitInView(bbox);
 }
 
 BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_collapse(m_graph, Traits()), m_forcer(m_approxGraph, 1.0) {
@@ -206,6 +206,12 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
     auto* editAlignTangents = new QCheckBox("Edit: align tangents");
     editAlignTangents->setChecked(true);
     vLayout->addWidget(editAlignTangents);
+
+    auto* loadReferenceDataButton = new QPushButton("Load reference data");
+    vLayout->addWidget(loadReferenceDataButton);
+
+    auto* loadReferencePolygonButton = new QPushButton("Load reference polygon for image");
+    vLayout->addWidget(loadReferencePolygonButton);
 
     auto* simplificationSettings = new QLabel("<h3>Simplification</h3>");
     vLayout->addWidget(simplificationSettings);
@@ -388,7 +394,7 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
 
     connect(loadFileButton, &QPushButton::clicked, [this, complexity, updateComplexityInfo, complexityLog, desiredComplexity]() {
         QString startDir = ".";
-        std::filesystem::path filePath = QFileDialog::getOpenFileName(this, tr("Select isolines"), startDir).toStdString();
+        std::filesystem::path filePath = QFileDialog::getOpenFileName(this, tr("Select input file (.ipe or .shp)"), startDir).toStdString();
         if (filePath == "") return;
         loadInput(filePath);
 
@@ -401,6 +407,30 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
         desiredComplexity->setMaximum(m_graph.number_of_edges());
 
         updateComplexityInfo();
+    });
+
+    connect(loadReferenceDataButton, &QPushButton::clicked, [this]() {
+        QString startDir = ".";
+        std::filesystem::path filePath = QFileDialog::getOpenFileName(this, tr("Select reference file (.tif or .shp)"), startDir).toStdString();
+        if (filePath == "") return;
+        if (filePath.extension() == ".tif") {
+            m_referenceData.push_back(QImage(filePath.c_str()));
+        } else {
+            auto [regionSet, proj] = readRegionSetUsingGDAL(filePath);
+            m_referenceData.push_back(regionSet);
+        }
+    });
+
+    connect(loadReferencePolygonButton, &QPushButton::clicked, [this]() {
+        QString startDir = ".";
+        std::filesystem::path filePath = QFileDialog::getOpenFileName(this, tr("Select reference polygon for image (.shp)"), startDir).toStdString();
+        if (filePath == "") return;
+        auto regionSet = readRegionSetUsingGDAL(filePath);
+        std::vector<PolygonWithHoles<Inexact>> pgns;
+        regionSet.first[0].geometry.polygons_with_holes(std::back_inserter(pgns));
+        Rectangle<Inexact> rect = pgns[0].bbox();
+        auto rectT = rect.transform(m_transform);
+        m_referencePolygon = Box(rectT.xmin(), rectT.ymin(), rectT.xmax(), rectT.ymax());
     });
 
     connect(exportButton, &QPushButton::clicked, [this, stackPolygons]() {
@@ -671,6 +701,29 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
         m_renderer->repaint();
     });
 
+    m_renderer->addPainting([this](GeometryRenderer& renderer) {
+		renderer.setStroke(Color(200, 200, 200), 2.0);
+        for (const auto& refData : m_referenceData) {
+            if (auto qImageP = std::get_if<QImage>(&refData)) {
+                auto& qImage = *qImageP;
+                const auto formats = QImageReader::supportedImageFormats();
+                if (!formats.contains("tiff")) {
+                    std::cerr << "No support for tiff" << std::endl;
+                }
+                if (auto gw = dynamic_cast<GeometryWidget*>(&renderer)) {
+                    std::cout << m_referencePolygon << std::endl;
+//                    gw->drawImage(qImage.size())
+                    gw->drawImage(m_referencePolygon, qImage);
+                }
+            } else if (auto regionSetP = std::get_if<RegionSet<Inexact>>(&refData)) {
+                auto& regionSet = *regionSetP;
+                for (const auto& region : regionSet) {
+                    renderer.draw(region.geometry);
+                }
+            }
+        }
+	}, "Reference data");
+
 	m_renderer->addPainting([showOldVertices, this](GeometryRenderer& renderer) {
 		renderer.setStroke(Color(200, 200, 200), 2.0);
         for (auto eit = m_original.edges_begin(); eit != m_original.edges_end(); ++eit) {
@@ -757,9 +810,40 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
             if (m_forcer.withinDistanceAlongIsoline(ps, qs, 2 * m_forcer.m_requiredMinDist)) {
                 continue;
             }
+//
+//            CGAL::Object o = m_forcer.m_delaunay.primal(eit);
+            using Exact_SDG_traits = CGAL::Segment_Delaunay_graph_traits_2<Exact>;
+            CGAL::Object o = exact_primal(*eit, m_forcer.m_delaunay);
+
+            Segment<Exact> s;
+            Line<Exact> l;
+            Ray<Exact> r;
+            CGAL::Parabola_segment_2<Exact_SDG_traits> parab;
+            if (CGAL::assign(s, o)) {
+//                if (!isfinite(s.source().x()) || !isfinite(s.target().x())) continue;
+//                std::cout << "Segment: " << s.source() << " -> " << s.target() << std::endl;
+//                if (s.source().)
+                if (!do_overlap(m_forcer.m_bbox, s.bbox())) continue;
+            }
+            if (CGAL::assign(l, o)) {
+//                continue;
+//                if (!isfinite(l.a()) || !isfinite(l.b()) || !isfinite(l.c())) continue;
+//                std::cout << "Line: " << l.a() << " " << l.b() << " " << l.c() << std::endl;
+            }
+            if (CGAL::assign(r, o)) {
+//                continue;
+//                if (!isfinite(r.source().x())) continue;
+//                std::cout << "Ray: " << r.source() << " " << r.direction() << std::endl;
+
+            }
+            if (CGAL::assign(parab, o)) {
+//                if (!isfinite(parab.p1.x()) || !isfinite(parab.p2.x()) || abs(parab.p1.x()) > 1E9 || abs(parab.p1.y()) > 1E9 || abs(parab.p2.x()) > 1E9 || abs(parab.p2.y()) > 1E9) continue;
+//                std::cout << "Parabola segment: " << parab.p1 << " " << parab.p2 << " " << parab.center() << " " << parab.line() << std::endl;
+//                if (!do_intersect(m_forcer.m_bbox, parab.p1) || !do_intersect(m_forcer.m_bbox, parab.p2)) continue;
+            }
 
             renderer.setStroke(Color{210, 210, 210}, 1.0);
-            draw_dual_edge(m_forcer.m_delaunay, *eit, voronoiDrawer);
+            draw_dual_edge_exact(m_forcer.m_delaunay, *eit, voronoiDrawer);
         }
 
         for (const auto& [vEdge, dEdge] : m_forcer.m_withinDistEdges) {

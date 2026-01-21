@@ -27,6 +27,8 @@ using Collapse = BezierCollapse<Graph, Traits>;
 using Edge_handle = Graph::Edge_handle;
 using Vertex_handle = Graph::Vertex_handle;
 
+using ReferenceData = std::variant<QImage, RegionSet<Inexact>>;
+
 class BezierSimplificationDemo : public QMainWindow {
 	Q_OBJECT
 
@@ -54,6 +56,8 @@ class BezierSimplificationDemo : public QMainWindow {
 
     std::vector<std::shared_ptr<ControlPoint>> m_editables;
     std::shared_ptr<ControlPoint> m_dragging;
+    std::vector<ReferenceData> m_referenceData;
+    Box m_referencePolygon;
 
     void loadInput(const std::filesystem::path& path);
 
