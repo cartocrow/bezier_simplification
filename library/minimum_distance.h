@@ -31,8 +31,10 @@ struct ApproximatedBezierGraphEdgeData {
 
 template<typename T>
 concept HasChanged = requires(T t) {
-    { t.changed } -> std::same_as<bool>;
+    { t.changed } -> std::convertible_to<bool>;
 };
+
+static_assert(HasChanged<ApproximatedBezierGraphEdgeData<Bezier_graph_2<std::monostate, std::monostate>>>);
 
 template <class BezierGraph>
 using ApproximatedBezierGraph = Straight_graph_2<ApproximatedBezierGraphVertexData<BezierGraph>, ApproximatedBezierGraphEdgeData<BezierGraph>, Inexact>;
@@ -534,7 +536,7 @@ class MinimumDistanceForcer {
     void initialize() {
         m_bbox = m_g.bbox();
         recomputeDelaunay();
-//        recomputeAuxiliary();
+        recomputeAuxiliary();
     }
 
     void step() {
@@ -575,11 +577,10 @@ class MinimumDistanceForcer {
             vh->point() = vh->point() + force;
             for (auto eit = vh->incident_edges_begin(); eit != vh->incident_edges_end(); ++eit) {
                 (*eit)->curve() = {(*eit)->source()->point(), (*eit)->target()->point()};
-                // the HasChanged<ED> check below does not work
-//                if constexpr (HasChanged<ED>) {
+                if constexpr (HasChanged<ED>) {
                     auto& ed = (*eit)->data();
                     ed.changed = true;
-//                }
+                }
             }
         };
 

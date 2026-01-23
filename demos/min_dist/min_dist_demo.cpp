@@ -68,7 +68,7 @@ MinDistDemo::MinDistDemo() : m_forcer(m_g, 1.0) {
         m_forcer.recomputeAuxiliary();
     });
 
-    m_g = readGraphUsingGDAL("data/small_min_dist_test.shp");
+    m_g = readGraphUsingGDAL("data/small_min_dist_test/small_min_dist_test.shp");
 
     std::vector<Point<Inexact>> points;
     for (auto vit = m_g.vertices_begin(); vit != m_g.vertices_end(); ++vit) {
