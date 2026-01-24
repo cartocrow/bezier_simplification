@@ -9,6 +9,8 @@
 #include "library/steven_bezier_collapse.h"
 #include "library/minimum_distance.h"
 
+#include <cartocrow/renderer/painting_renderer.h>
+
 #include <QMainWindow>
 
 #include <filesystem>
@@ -58,6 +60,8 @@ class BezierSimplificationDemo : public QMainWindow {
     std::shared_ptr<ControlPoint> m_dragging;
     std::vector<ReferenceData> m_referenceData;
     Box m_referencePolygon;
+
+    PaintingRenderer m_voronoiPainting;
 
     void loadInput(const std::filesystem::path& path);
 

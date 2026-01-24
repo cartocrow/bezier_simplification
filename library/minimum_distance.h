@@ -67,7 +67,12 @@ approximateBezierGraph(const BezierGraph& bg, int nPoints) {
         CubicBezierCurve curve = eit->curve();
 
         std::vector<Point<Inexact>> pts;
-        curve.samplePoints(nPoints-1, std::back_inserter(pts));
+        if (isStraight(curve)) {
+            pts.push_back(curve.source());
+            pts.push_back(curve.target());
+        } else {
+            curve.samplePoints(nPoints - 1, std::back_inserter(pts));
+        }
 
         for (int i = 1; i < pts.size(); ++i) {
             auto endVertex = i == pts.size() - 1 ? curveEndVertex : g.insert_vertex(pts[i]);
@@ -419,43 +424,6 @@ class MinimumDistanceForcer {
         }
     }
 
-    bool
-    withinDistanceAlongIsoline(typename SDG::Vertex::Storage_site_2 p, typename SDG::Vertex::Storage_site_2 q, double dist) {
-        auto eh1 = *p.info();
-        auto eh2 = *q.info();
-        if (eh1 == eh2) return true;
-
-        double traversedLength = 0;
-
-        if (eh1->target()->degree() == 2) {
-            auto current = eh1->next();
-            if (current == eh2) return true;
-            while (traversedLength < dist) {
-                traversedLength += CGAL::squared_distance(current->source()->point(), current->target()->point());
-                if (current->target()->degree() != 2) break;
-                current = current->next();
-                if (current == eh2) {
-                    return true;
-                }
-            }
-        }
-        if (eh1->source()->degree() == 2) {
-            traversedLength = 0;
-            auto current = eh1->prev();
-            if (current == eh2) return true;
-            while (traversedLength < dist) {
-                traversedLength += CGAL::squared_distance(current->source()->point(), current->target()->point());
-                if (current->source()->degree() != 2) break;
-                current = current->prev();
-                if (current == eh2) {
-                    return true;
-                }
-            }
-        }
-
-        return false;
-    }
-
     std::pair<typename SDG::Vertex::Storage_site_2, typename SDG::Vertex::Storage_site_2>
     defining_storage_sites(const typename SDG::Edge& edge) {
         return {edge.first->vertex(SDG::cw(edge.second))->storage_site(),
@@ -487,6 +455,91 @@ class MinimumDistanceForcer {
         return {defining_graph_feature(ps), defining_graph_feature(qs)};
     }
 
+    bool
+    withinDistanceAlongIsoline(typename SDG::Vertex::Storage_site_2 p, typename SDG::Vertex::Storage_site_2 q, double dist) {
+        auto nextFeature = [](const GraphFeature& f) -> std::optional<GraphFeature> {
+            if (auto vhP = std::get_if<typename StraightGraph::Vertex_handle>(&f)) {
+                auto& vh = *vhP;
+                if (vh->degree() == 2) {
+                    return vh->outgoing();
+                } else if (vh->degree() == 1) {
+                    return *vh->incident_edges_begin();
+                }
+            } else if (auto ehP = std::get_if<typename StraightGraph::Edge_handle>(&f)) {
+                auto& eh = *ehP;
+                return eh->target();
+            } else {
+                throw std::runtime_error("Unknown graph feature!");
+            }
+            return std::nullopt;
+        };
+
+        auto prevFeature = [](const GraphFeature& f) -> std::optional<GraphFeature> {
+            if (auto vhP = std::get_if<typename StraightGraph::Vertex_handle>(&f)) {
+                auto& vh = *vhP;
+                if (vh->degree() == 2) {
+                    return vh->incoming();
+                }
+            } else if (auto ehP = std::get_if<typename StraightGraph::Edge_handle>(&f)) {
+                auto& eh = *ehP;
+                return eh->source();
+            } else {
+                throw std::runtime_error("Unknown graph feature!");
+            }
+            return std::nullopt;
+        };
+
+        auto featureLength = [](const GraphFeature& f) -> double {
+            if (std::get_if<typename StraightGraph::Vertex_handle>(&f)) {
+                return 0;
+            } else if (auto ehP = std::get_if<typename StraightGraph::Edge_handle>(&f)) {
+                auto& eh = *ehP;
+                return CGAL::sqrt(CGAL::squared_distance(eh->source()->point(), eh->target()->point()));
+            }
+            throw std::runtime_error("Unknown graph feature!");
+        };
+
+        auto show = [](const GraphFeature& f) -> std::string {
+            std::stringstream ss;
+            if (auto vhP = std::get_if<typename StraightGraph::Vertex_handle>(&f)) {
+                auto& vh = *vhP;
+                ss << "Vertex: " << vh->point();
+            } else if (auto ehP = std::get_if<typename StraightGraph::Edge_handle>(&f)) {
+                auto& eh = *ehP;
+                ss << "Edge: " << eh->source()->point() << " -> " << eh->target()->point();
+            } else {
+                throw std::runtime_error("Unknown graph feature!");
+            }
+            return ss.str();
+        };
+
+        auto f1 = defining_graph_feature(p);
+        auto f2 = defining_graph_feature(q);
+
+        if (f1 == f2) return true;
+
+        double traversedLength = 0;
+        std::optional<GraphFeature> current = f1;
+        do {
+            current = nextFeature(*current);
+            if (!current.has_value()) break;
+            if (*current == f2) return true;
+            traversedLength += featureLength(*current);
+        } while (traversedLength < dist);
+
+        traversedLength = 0;
+        current = f1;
+
+        do {
+            current = prevFeature(*current);
+            if (!current.has_value()) break;
+            if (*current == f2) return true;
+            traversedLength += featureLength(*current);
+        } while (traversedLength < dist);
+
+        return false;
+    }
+
     std::vector<std::pair<VoronoiEdge, typename SDG::Edge>> m_withinDistEdges;
     std::vector<std::variant<Point<Inexact>, Segment<Inexact>>> m_withinDistIsolineParts;
     SDG m_delaunay;
@@ -497,6 +550,19 @@ class MinimumDistanceForcer {
         m_delaunay.clear();
         for (auto eit = m_g.edges_begin(); eit != m_g.edges_end(); ++eit) {
             Segment<Inexact> seg(eit->source()->point(), eit->target()->point());
+            if ((abs(seg.source().x() - m_bbox.xmin()) < 1 ||
+                abs(seg.source().x() - m_bbox.xmax()) < 1 ||
+                abs(seg.source().y() - m_bbox.ymin()) < 1 ||
+                abs(seg.source().y() - m_bbox.ymax()) < 1 ||
+                abs(seg.target().x() - m_bbox.xmin()) < 1 ||
+                abs(seg.target().x() - m_bbox.xmax()) < 1 ||
+                abs(seg.target().y() - m_bbox.ymin()) < 1 ||
+                abs(seg.target().y() - m_bbox.ymax()) < 1) && (
+                abs(seg.source().x() - seg.target().x()) < M_EPSILON ||
+                abs(seg.source().y() - seg.target().y()) < M_EPSILON)
+                ) {
+                continue;
+            }
             typename SDG::Site_2 site = Gt::Site_2::construct_site_2(seg.source(), seg.target());
             SiteInfo info = eit;
             m_delaunay.insert(site, info);
@@ -536,7 +602,7 @@ class MinimumDistanceForcer {
     void initialize() {
         m_bbox = m_g.bbox();
         recomputeDelaunay();
-        recomputeAuxiliary();
+//        recomputeAuxiliary();
     }
 
     void step() {
