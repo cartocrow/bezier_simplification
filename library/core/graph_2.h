@@ -351,7 +351,7 @@ class Graph_2 {
         return m_sorted;
     }
 
-    CGAL::Bbox_2 bbox() {
+    CGAL::Bbox_2 bbox() const {
         if (m_vertices.empty()) {
             return {0, 0, 0, 0};
         }

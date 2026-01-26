@@ -7,7 +7,12 @@
 #include <cartocrow/core/arrangement_helpers.h>
 
 // for debugging only; todo: remove
+
+#define DEBUG 0
+
+#if DEBUG
 #include <cartocrow/renderer/ipe_renderer.h>
+#endif
 
 namespace cartocrow::curved_simplification {
 Number<Inexact> getAreaD0(Number<Inexact> a, Point<Inexact> p0, Direction<Inexact> t0, Direction<Inexact> t1, Number<Inexact> d1, Point<Inexact> p3);
@@ -26,7 +31,9 @@ template <typename BG> struct StevenBCTraits {
 	int nSegs;
     int symDiffSegs;
 	bool debug;
+#if DEBUG
     renderer::IpeRenderer ipeRenderer;
+#endif
 
 	StevenBCTraits(bool debug = false, int tSteps = 10,	int nSegs = 100, int symDiffSegs = 10) :
 	      tSteps(tSteps), nSegs(nSegs), symDiffSegs(symDiffSegs), debug(debug) {};
@@ -274,6 +281,7 @@ private:
 
         if (!c1_maybe.has_value()) return std::nullopt;
 
+#if DEBUG
         if (debug) {
             std::cout << "a0: " << a0 << " a1: " << a1 << std::endl;
 
@@ -297,6 +305,7 @@ private:
             });
             ipeRenderer.nextPage();
         }
+#endif
 
         return std::pair(*c0_maybe, *c1_maybe);
     }
@@ -407,6 +416,7 @@ private:
         }
         CGAL::insert_non_intersecting_curves(arr, beforePlXMCurves.begin(), beforePlXMCurves.end());
         CGAL::insert(arr, afterPlE.edges_begin(), afterPlE.edges_end());
+#if DEBUG
         if (debug) {
             ipeRenderer.addPainting([beforeSpline, afterSpline, arr](renderer::GeometryRenderer& renderer) {
                 renderer.setMode(renderer::GeometryRenderer::stroke);
@@ -419,6 +429,7 @@ private:
             });
             ipeRenderer.nextPage();
         }
+#endif
         double symDiffErr = 0;
         for (auto fit = arr.faces_begin(); fit != arr.faces_end(); ++fit) {
             if (fit->is_unbounded()) continue;
@@ -433,9 +444,11 @@ private:
 
 public:
     void determineCollapse(typename BG::Edge_handle e) {
+#if DEBUG
         if (debug) {
             ipeRenderer = renderer::IpeRenderer();
         }
+#endif
 
         auto& edata = e->data();
         edata.collapse = std::nullopt;
@@ -522,6 +535,7 @@ public:
                 best = {c0_, c1_};
             }
 
+#if DEBUG
             if (debug) {
                 ipeRenderer.addPainting([beforeSpline](renderer::GeometryRenderer& renderer) {
                     renderer.setMode(renderer::GeometryRenderer::vertices | renderer::GeometryRenderer::stroke);
@@ -572,6 +586,7 @@ public:
                 }, "After");
                 ipeRenderer.nextPage();
             }
+#endif
         };
 
 
@@ -592,9 +607,11 @@ public:
             evaluate(spiroResult->first, spiroResult->second);
         }
 
+#if DEBUG
         if (debug) {
             ipeRenderer.save("debugging.ipe");
         }
+#endif
 
         if (best.has_value()) {
             edata.collapse = { .cost=minErr, .before=best->first, .after=best->second };
