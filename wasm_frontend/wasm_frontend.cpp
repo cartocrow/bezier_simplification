@@ -71,9 +71,18 @@ public:
 
         int i = 0;
         for (auto eit = m_bg.edges_begin(); eit != m_bg.edges_end(); ++eit) {
+            if (!m_eToEid.contains(&*eit)) continue;
             arr.set(i++, m_eToEid.at(&*eit));
         }
         return arr;
+    }
+
+    int number_of_vertices() const {
+        return m_bg.number_of_vertices();
+    }
+
+    int number_of_edges() const {
+        return m_bg.number_of_edges();
     }
 private:
     val makePoint(const Point<Inexact>& pt) const {
@@ -81,6 +90,26 @@ private:
         obj.set("x", pt.x());
         obj.set("y", pt.y());
         return obj;
+    }
+
+    void recomputeMaps() {
+        m_vidToV.clear();
+        m_eidToE.clear();
+        m_vToVid.clear();
+        m_eToEid.clear();
+        m_maxVid = 0;
+        m_maxEid = 0;
+
+        int i = 0;
+        for (auto vit = m_bg.vertices_begin(); vit != m_bg.vertices_end(); ++vit) {
+            m_vidToV[i] = vit;
+            m_vToVid[&*vit] = i++;
+        }
+        i = 0;
+        for (auto eit = m_bg.edges_begin(); eit != m_bg.edges_end(); ++eit) {
+            m_eidToE[i] = eit;
+            m_eToEid[&*eit] = i++;
+        }
     }
 public:
     val get_vertex_point(int id) const {
@@ -111,6 +140,17 @@ public:
 
         return obj;
     }
+
+    void initialize() {
+        m_collapse.initialize();
+        m_collapse.runToComplexity(1);
+        recomputeMaps();
+    }
+
+    void run_to_complexity(int k) {
+        m_g.recallComplexity(k);
+        recomputeMaps();
+    }
 };
 
 EMSCRIPTEN_BINDINGS(bezier_simplification) {
@@ -122,5 +162,9 @@ EMSCRIPTEN_BINDINGS(bezier_simplification) {
             .function("get_edge_curve", &BezierSimplification::get_edge_curve)
             .function("vertices", &BezierSimplification::vertices)
             .function("edges", &BezierSimplification::edges)
-            .function("get_bbox", &BezierSimplification::get_bbox);
+            .function("get_bbox", &BezierSimplification::get_bbox)
+            .function("number_of_vertices", &BezierSimplification::number_of_vertices)
+            .function("number_of_edges", &BezierSimplification::number_of_edges)
+            .function("initialize", &BezierSimplification::initialize)
+            .function("run_to_complexity", &BezierSimplification::run_to_complexity);
 }

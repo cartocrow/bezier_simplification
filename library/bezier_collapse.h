@@ -112,18 +112,26 @@ class BezierCollapse {
         }
 
         m_q = {};
+#ifndef __EMSCRIPTEN__
         std::vector<std::future<void>> futures;
+#endif
 
         for (auto eit = m_g.edges_begin(); eit != m_g.edges_end(); ++eit) {
             eit->data().blocked_by.clear();
             eit->data().blocking.clear();
             eit->data().blocked_by_degzero = false;
+#ifndef __EMSCRIPTEN__
             futures.emplace_back(std::async(std::launch::async, [eit, this]() {
+#endif
                 m_traits.determineCollapse(eit);
+#ifndef __EMSCRIPTEN__
             }));
+#endif
         }
 
+#ifndef __EMSCRIPTEN__
         for (auto& f : futures) f.get();
+#endif
         for (auto eit = m_g.edges_begin(); eit != m_g.edges_end(); ++eit) {
             m_q.push(eit);
         }

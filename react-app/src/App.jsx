@@ -20,21 +20,44 @@ function pathToCubics(d) {
   let x = 0, y = 0
   const cubics = []
 
+  let justClosed = false;
+
   for (const cmd of path.commands) {
     if (cmd.type === SVGPathData.MOVE_TO) {
-      x = cmd.x
-      y = cmd.y
-    }
-
-    if (cmd.type === SVGPathData.CURVE_TO) {
+      if (justClosed) {
+        cubics.push({
+          c0: { x, y: -y },
+          c1: { x: (2 * x + cmd.x) / 3, y: (-2 * y -cmd.y) / 3 },
+          c2: { x: (x + 2 * cmd.x) / 3, y: (-y - 2 * cmd.y) / 3 },
+          c3: { x: cmd.x, y: -cmd.y },
+        })
+      } else {
+        x = cmd.x
+        y = cmd.y
+      }
+    } else if (cmd.type === SVGPathData.CURVE_TO) {
       cubics.push({
-        p0: { x, y },
-        c0: { x: cmd.x1, y: cmd.y1 },
-        c1: { x: cmd.x2, y: cmd.y2 },
-        p1: { x: cmd.x, y: cmd.y },
+        c0: { x, y: -y },
+        c1: { x: cmd.x1, y: -cmd.y1 },
+        c2: { x: cmd.x2, y: -cmd.y2 },
+        c3: { x: cmd.x, y: -cmd.y },
       })
       x = cmd.x
       y = cmd.y
+    } else if (cmd.type === SVGPathData.LINE_TO) {
+      cubics.push({
+        c0: { x, y: -y },
+        c1: { x: (2 * x + cmd.x) / 3, y: (-2 * y -cmd.y) / 3 },
+        c2: { x: (x + 2 * cmd.x) / 3, y: (-y - 2 * cmd.y) / 3 },
+        c3: { x: cmd.x, y: -cmd.y },
+      })
+      x = cmd.x
+      y = cmd.y
+    } else if (cmd.type == SVGPathData.CLOSE_PATH) {
+      justClosed = true;
+    } else {
+      console.log("Not handling the following command")
+      console.log(cmd)
     }
   }
 
@@ -53,16 +76,16 @@ function addCubicsToGraph(bs, cubics) {
   }
 
   for (const c of cubics) {
-    const v0 = getVertex(c.p0)
-    const v1 = getVertex(c.p1)
+    const v0 = getVertex(c.c0)
+    const v1 = getVertex(c.c3)
 
     bs.add_edge(
       v0,
       v1,
-      c.c0.x,
-      c.c0.y,
       c.c1.x,
-      c.c1.y
+      c.c1.y,
+      c.c2.x,
+      c.c2.y
     )
   }
 }
@@ -97,8 +120,9 @@ function SvgDropZone({ onSvgLoaded }) {
 
 function App() {
   const [bs, setBs] = useState(null)
-
   const [ignored, forceUpdate] = useReducer(x => x + 1, 0)
+  const [target, setTarget] = useState(1)
+  const [maxEdges, setMaxEdges] = useState(1)
 
   useEffect(() => {
     let cancelled = false
@@ -127,7 +151,15 @@ function App() {
     }
   }, [])
 
-  const bbox = bs == null ? {xmin:0, xmax:0, ymin:0, ymax:0} : bs.get_bbox()
+  let bbox = {xmin:0, xmax:0, ymin:0, ymax:0};
+
+  if (bs != null) {
+    try {
+      bbox = bs.get_bbox();
+    } catch (e) {
+      console.log(e.stack);
+    }
+  }
 
   const padding = 5
 
@@ -137,6 +169,16 @@ function App() {
     (bbox.xmax - bbox.xmin) + 2 * padding,
     (bbox.ymax - bbox.ymin) + 2 * padding,
   ].join(' ')
+
+  let edges = [];
+
+  if (bs != null) {
+    try {
+      edges = bs.edges();
+    } catch (e) {
+      console.log(e.stack);
+    }
+  }
 
   return (
     <>
@@ -154,16 +196,70 @@ function App() {
           addCubicsToGraph(bs, cubics)
         }
 
+        setMaxEdges(bs.number_of_edges())
         setBs(bs)
         forceUpdate()
       }}
     />
 
+    {bs && (
+      <input type="button" value="Initialize" onClick={(e) => { 
+        if (bs) {
+          bs.initialize()
+          forceUpdate()
+        }}}
+        ></input>
+    )}
+
+    {bs && (
+      <input type="button" value="Download SVG" onClick={(e) => {
+        // Source - https://stackoverflow.com/a
+        // Posted by DaveTheScientist, modified by community. See post 'Timeline' for change history
+        // Retrieved 2026-01-26, License - CC BY-SA 4.0
+        var svgData = "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" + document.getElementById("graphSvg").outerHTML;
+        var svgBlob = new Blob([svgData], {type:"image/svg+xml;charset=utf-8"});
+        var svgUrl = URL.createObjectURL(svgBlob);
+        var downloadLink = document.createElement("a");
+        downloadLink.href = svgUrl;
+        downloadLink.download = "output.svg";
+        document.body.appendChild(downloadLink);
+        downloadLink.click();
+        document.body.removeChild(downloadLink);
+      }}></input>
+    )}
+
+    <br/>
+
+    {bs && (
+      <input
+        type="range"
+        min={0}
+        max={maxEdges}
+        step={1}
+        value={target}
+        onChange={(e) =>  {
+          setTarget(Number(e.target.value))
+          if (bs) {
+            try {
+              bs.run_to_complexity(e.target.value)
+            } catch (e) {
+              console.log(e.stack);
+            }
+          }
+          forceUpdate()
+        }}
+      />
+    )}
 
       {bs && (
-        <svg width="100%" height={800} viewBox={viewBox}>
-          {bs.edges().map((eId) => {
-            const curve = bs.get_edge_curve(eId)
+        <svg version="1.2" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" id="graphSvg" width="100%" height={600} viewBox={viewBox}>
+          {edges.map((eId) => {
+            let curve;
+            try {
+              curve = bs.get_edge_curve(eId)
+            } catch (e) {
+              console.log(e.stack);
+            }
 
             const d = `
               M ${curve.c0.x} ${curve.c0.y}
@@ -174,6 +270,7 @@ function App() {
 
             return (
               <path
+               	vector-effect="non-scaling-stroke"
                 key={eId}
                 d={d}
                 fill="none"

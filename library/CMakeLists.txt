@@ -2,9 +2,14 @@ if (NOT EMSCRIPTEN)
 set(SOURCES
     steven_bezier_collapse.cpp
     fit_cubic.cpp
-    spiro_helpers/bezctx_cbs.cpp
     read_graph_gdal.cpp
     intersection_helpers.cpp
+
+    spiro_helpers/spiro/bezctx.c
+    spiro_helpers/spiro/spiro.c
+    spiro_helpers/spiro/spiroentrypoints.c
+
+    spiro_helpers/bezctx_cbs.cpp
 )
 set(HEADERS
     common.h
@@ -38,6 +43,10 @@ set(HEADERS
 )
 else()
 set(SOURCES
+    spiro_helpers/spiro/bezctx.c
+    spiro_helpers/spiro/spiro.c
+    spiro_helpers/spiro/spiroentrypoints.c
+
     steven_bezier_collapse.cpp
     fit_cubic.cpp
     spiro_helpers/bezctx_cbs.cpp
