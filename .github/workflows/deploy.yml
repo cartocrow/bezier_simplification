@@ -25,11 +25,13 @@ jobs:
           npm ci
 
       - name: Build
-        run: npm run build
+        run: |
+          cd react-app
+          npm run build
 
       - name: Deploy
         uses: JamesIves/github-pages-deploy-action@v4
         with:
           BRANCH: gh-page
-          FOLDER: dist
+          FOLDER: react-app/dist
           CLEAN: true # Automatically remove deleted files from the deploy branch
