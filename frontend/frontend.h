@@ -5,6 +5,7 @@
 #include "double_slider.h"
 #include "library/core/bezier_graph_2.h"
 #include "library/core/topo_set.h"
+#include "library/core/geometry_set.h"
 #include "library/bezier_collapse.h"
 #include "library/steven_bezier_collapse.h"
 #include "library/minimum_distance.h"
@@ -29,7 +30,7 @@ using Collapse = BezierCollapse<Graph, Traits>;
 using Edge_handle = Graph::Edge_handle;
 using Vertex_handle = Graph::Vertex_handle;
 
-using ReferenceData = std::variant<QImage, RegionSet<Inexact>>;
+using ReferenceData = std::variant<QImage, GeometrySet<Inexact>>;
 
 class BezierSimplificationDemo : public QMainWindow {
 	Q_OBJECT
@@ -62,6 +63,31 @@ class BezierSimplificationDemo : public QMainWindow {
     Box m_referencePolygon;
 
     PaintingRenderer m_voronoiPainting;
+
+    std::vector<Color> m_colors = {
+        {0xB9E1EE},
+        {0x9AC019},
+        {0xCD6814},
+        {0xE53389},
+        {0xC1BC56},
+        {0x923B8B},
+        {0xFBD2AA},
+        {0x999999},
+        {0xFECD0F},
+        {0xCB9A03},
+        {0xF3983B},
+        {0x4B8EC7},
+        {0x2E9A67},
+        {0xE95937},
+        {0xF8EE82},
+        {0xE74646},
+        {0xCBBC9D},
+        {0x6699CD},
+        {0x6FC4C6},
+        {0xF1979A},
+        {0x8F5A9C},
+        {0xBB3087},
+    };
 
     void loadInput(const std::filesystem::path& path);
 

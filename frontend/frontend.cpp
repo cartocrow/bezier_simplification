@@ -217,6 +217,9 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
     auto* loadReferencePolygonButton = new QPushButton("Load reference polygon for image");
     vLayout->addWidget(loadReferencePolygonButton);
 
+    auto* clearReferenceDataButton = new QPushButton("Clear reference data");
+    vLayout->addWidget(clearReferenceDataButton);
+
     auto* simplificationSettings = new QLabel("<h3>Simplification</h3>");
     vLayout->addWidget(simplificationSettings);
 
@@ -420,9 +423,13 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
         if (filePath.extension() == ".tif") {
             m_referenceData.push_back(QImage(filePath.c_str()));
         } else {
-            auto [regionSet, proj] = readRegionSetUsingGDAL(filePath);
-            m_referenceData.push_back(regionSet);
+            auto geometrySet = readGeometrySetUsingGDAL(filePath);
+            m_referenceData.push_back(geometrySet.transform(m_transform));
         }
+    });
+
+    connect(clearReferenceDataButton, &QPushButton::clicked, [this]() {
+        m_referenceData.clear();
     });
 
     connect(loadReferencePolygonButton, &QPushButton::clicked, [this]() {
@@ -756,8 +763,9 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
     });
 
     m_renderer->addPainting([this](GeometryRenderer& renderer) {
-		renderer.setStroke(Color(200, 200, 200), 2.0);
+        int i = 0;
         for (const auto& refData : m_referenceData) {
+            renderer.setStroke(m_colors.at(i).shaded(1.5), 2.0);
             if (auto qImageP = std::get_if<QImage>(&refData)) {
                 auto& qImage = *qImageP;
                 const auto formats = QImageReader::supportedImageFormats();
@@ -765,16 +773,16 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
                     std::cerr << "No support for tiff" << std::endl;
                 }
                 if (auto gw = dynamic_cast<GeometryWidget*>(&renderer)) {
-                    std::cout << m_referencePolygon << std::endl;
 //                    gw->drawImage(qImage.size())
                     gw->drawImage(m_referencePolygon, qImage);
                 }
-            } else if (auto regionSetP = std::get_if<RegionSet<Inexact>>(&refData)) {
-                auto& regionSet = *regionSetP;
-                for (const auto& region : regionSet) {
-                    renderer.draw(region.geometry);
+            } else if (auto geometrySetP = std::get_if<GeometrySet<Inexact>>(&refData)) {
+                auto& geometrySet = *geometrySetP;
+                for (const auto& geom : geometrySet.geometries) {
+                    std::visit([&](const auto& g) { renderer.draw(g); }, geom);
                 }
             }
+            ++i;
         }
 	}, "Reference data");
 

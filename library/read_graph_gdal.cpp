@@ -386,4 +386,58 @@ void exportTopoSetUsingGDAL(const std::filesystem::path& path, const TopoSet<Ine
     }
     GDALClose( poDS );
 }
+
+GeometrySet<Inexact> readGeometrySetUsingGDAL(const std::filesystem::path& path) {
+    GDALAllRegister();
+    GDALDataset *poDS;
+
+    poDS = (GDALDataset*) GDALOpenEx( path.string().c_str(), GDAL_OF_VECTOR, nullptr, nullptr, nullptr );
+    if( poDS == nullptr ) {
+        printf( "GDAL open failed.\n" );
+        exit( 1 );
+    }
+    OGRLayer* poLayer;
+    poLayer = poDS->GetLayer(0);
+
+    poLayer->ResetReading();
+
+    GeometrySet<Inexact> geometrySet;
+
+    for (auto& poFeature : *poLayer) {
+        OGRGeometry *poGeometry;
+        poGeometry = poFeature->GetGeometryRef();
+
+        // todo: extract into subroutine
+        switch (wkbFlatten(poGeometry->getGeometryType())) {
+            case wkbMultiPolygon: {
+                OGRMultiPolygon *poMultiPolygon = poGeometry->toMultiPolygon();
+                geometrySet.geometries.push_back(approximate(ogrMultiPolygonToPolygonSet(*poMultiPolygon)));
+                break;
+            }
+            case wkbPolygon: {
+                OGRPolygon *poly = poGeometry->toPolygon();
+                geometrySet.geometries.push_back(approximate(ogrPolygonToPolygonWithHoles(*poly)));
+                break;
+            }
+            case wkbLinearRing: {
+                OGRLinearRing *poly = poGeometry->toLinearRing();
+                geometrySet.geometries.push_back(approximate(ogrLinearRingToPolygon(*poly)));
+                break;
+            }
+            case wkbLineString: {
+                OGRLineString *pl = poGeometry->toLineString();
+                geometrySet.geometries.push_back(approximate(ogrLineStringToPolyline(*pl)));
+                break;
+            }
+            case wkbMultiLineString: {
+                OGRMultiLineString *pl = poGeometry->toMultiLineString();
+                geometrySet.geometries.push_back(approximate(PolylineSet<Exact>{ogrMultiLineStringToMultiPolyline(*pl)}));
+                break;
+            }
+            default: std::cout << "Did not handle this type of geometry: " << poGeometry->getGeometryName() << std::endl;
+        }
+    }
+
+    return geometrySet;
+}
 }
