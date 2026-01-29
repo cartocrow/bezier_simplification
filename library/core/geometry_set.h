@@ -3,7 +3,7 @@
 #include <cartocrow/core/core.h>
 #include <cartocrow/core/polyline.h>
 #include <cartocrow/core/transform_helpers.h>
-#include <cartocrow/core/polyline_set.h"
+#include <cartocrow/core/polyline_set.h>
 
 namespace cartocrow {
 template<class... Ts>

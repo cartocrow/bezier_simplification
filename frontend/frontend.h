@@ -47,6 +47,7 @@ class BezierSimplificationDemo : public QMainWindow {
     CGAL::Aff_transformation_2<Inexact> m_transform;
     OGRSpatialReference m_spatialRef;
     DoubleSlider* m_minDist;
+    DoubleSlider* m_minComponentLength;
     MinimumDistanceForcer<typename ApproximatedGraph::Vertex_data, typename ApproximatedGraph::Edge_data> m_forcer;
     ApproximatedGraph m_approxGraph;
 
@@ -90,6 +91,7 @@ class BezierSimplificationDemo : public QMainWindow {
     };
 
     void loadInput(const std::filesystem::path& path);
+    void repaintVoronoi();
 
   public:
 	BezierSimplificationDemo();

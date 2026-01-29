@@ -4,6 +4,7 @@
 #include "conic_types.h"
 #include "intersection_helpers.h"
 #include "fit_cubic.h"
+#include "steven_bezier_collapse.h"
 
 #include <cartocrow/core/core.h>
 #include <cartocrow/core/vector_helpers.h>
@@ -336,7 +337,6 @@ class MinimumDistanceForcer {
 
         if (auto sP = std::get_if<Segment<Inexact>>(&vEdge)) {
             auto& s = *sP;
-            std::cout << s.source() << " -> " << s.target() << std::endl;
             if (!isfinite(s.source().x()) || !isfinite(s.target().x())) return std::nullopt;
             if (p.is_point() && q.is_point()) {
                 Circle<Inexact> circ(p.point(), dist * dist, CGAL::COUNTERCLOCKWISE);
@@ -540,10 +540,12 @@ class MinimumDistanceForcer {
         return false;
     }
 
-    std::vector<std::pair<VoronoiEdge, typename SDG::Edge>> m_withinDistEdges;
+    using Component = std::vector<std::pair<VoronoiEdge, typename SDG::Edge>>;
+    std::vector<Component> m_withinDistEdgeComponents;
     std::vector<std::variant<Point<Inexact>, Segment<Inexact>>> m_withinDistIsolineParts;
     SDG m_delaunay;
     double m_requiredMinDist = 0;
+    double m_requiredLength = 0;
     StraightGraph& m_g;
     Box m_bbox;
     void recomputeDelaunay() {
@@ -569,29 +571,51 @@ class MinimumDistanceForcer {
         }
     }
 
+    bool filterVoronoiEdge(const typename SDG::Edge& e) {
+        auto v1 = e.first->vertex(SDG::cw(e.second));
+        auto v2 = e.first->vertex(SDG::ccw(e.second));
+//        std::cout << v1-> << std::endl;
+//        std::cout << v2-> << std::endl;
+        auto [p, q] = defining_sites<SDG>(e);
+        // Skip edges that are defined by consecutive isoline edges
+        if (p.is_segment() && q.is_segment() && (p.source() == q.source() || p.target() == q.target()  || p.source() == q.target() || p.target() == q.source()) ||
+            p.is_point()   && q.is_segment() && (p.point()  == q.source() || p.point()  == q.target()) ||
+            p.is_segment() && q.is_point()   && (p.source() == q.point()  || p.target() == q.point())) return true;
+        auto [ps, qs] = defining_storage_sites(e);
+        if (withinDistanceAlongIsoline(ps, qs, 2 * m_requiredMinDist)) return true;
+        return false;
+    }
+
+    bool filterComponent(const Component& comp) {
+        double totalLength = 0;
+        for (const auto& [vEdge, dEdge] : comp) {
+            totalLength += length(vEdge);
+        }
+        return totalLength < m_requiredLength;
+    }
+
     void recomputeAuxiliary() {
-        m_withinDistEdges.clear();
         m_withinDistIsolineParts.clear();
-        for (auto eit = m_delaunay.finite_edges_begin(); eit != m_delaunay.finite_edges_end(); ++eit) {
-            auto [p, q] = defining_sites<SDG>(*eit);
-            // Skip edges that are defined by consecutive isoline edges
-            if (p.is_segment() && q.is_segment() && (p.source() == q.source() || p.target() == q.target()  || p.source() == q.target() || p.target() == q.source()) ||
-                p.is_point()   && q.is_segment() && (p.point()  == q.source() || p.point()  == q.target()) ||
-                p.is_segment() && q.is_point()   && (p.source() == q.point()  || p.target() == q.point())) continue;
+        m_withinDistEdgeComponents.clear();
 
-            auto [ps, qs] = defining_storage_sites(*eit);
-            if (withinDistanceAlongIsoline(ps, qs, 2 * m_requiredMinDist)) {
-                continue;
-            }
+        std::vector<std::vector<typename SDG::Edge>> components;
+        bfsOnVoronoiEdges(m_delaunay, [&](const typename SDG::Edge& e) {
+            if (filterVoronoiEdge(e)) return false;
+            return minDist(m_delaunay, e).first <= m_requiredMinDist;
+        }, std::back_inserter(components));
 
-            auto vorEdge = withinDist(m_delaunay, *eit, m_requiredMinDist);
-            if (vorEdge.has_value()) {
-                m_withinDistEdges.emplace_back(*vorEdge, *eit);
+        for (const auto& comp : components) {
+            std::vector<std::pair<VoronoiEdge, typename SDG::Edge>> component;
+            for (const auto& e : comp) {
+                auto vorEdge = *withinDist(m_delaunay, e, m_requiredMinDist);
+                component.push_back({vorEdge, e});
 
                 // project vorEdge on the sites.
-                m_withinDistIsolineParts.push_back(site_projection(*vorEdge, p));
-                m_withinDistIsolineParts.push_back(site_projection(*vorEdge, q));
+                auto [p, q] = defining_sites<SDG>(e);
+                m_withinDistIsolineParts.push_back(site_projection(vorEdge, p));
+                m_withinDistIsolineParts.push_back(site_projection(vorEdge, q));
             }
+            m_withinDistEdgeComponents.push_back(component);
         }
     }
 
@@ -602,11 +626,11 @@ class MinimumDistanceForcer {
     void initialize() {
         m_bbox = m_g.bbox();
         recomputeDelaunay();
-//        recomputeAuxiliary();
+        recomputeAuxiliary();
     }
 
     void step() {
-        if (m_withinDistEdges.empty()) return;
+        if (m_withinDistEdgeComponents.empty()) return;
 
         // Iterate over all m_withinDistEdges.
         // Apply a force to the defining sites, its strength proportional to the length of the edge.
@@ -650,14 +674,17 @@ class MinimumDistanceForcer {
             }
         };
 
-        for (const auto& [vEdge, dEdge] : m_withinDistEdges) {
-            auto [pf, qf] = defining_graph_features(dEdge);
+        for (const auto& comp : m_withinDistEdgeComponents) {
+            if (filterComponent(comp)) continue;
+            for (const auto& [vEdge, dEdge] : comp) {
+                auto [pf, qf] = defining_graph_features(dEdge);
 
-            auto repeller = minDist(m_delaunay, dEdge).second;
-            auto magnitude = length(vEdge) * 0.1;
+                auto repeller = minDist(m_delaunay, dEdge).second;
+                auto magnitude = length(vEdge) * 0.1;
 
-            repel(pf, repeller, magnitude);
-            repel(qf, repeller, magnitude);
+                repel(pf, repeller, magnitude);
+                repel(qf, repeller, magnitude);
+            }
         }
 
         for (const auto& [vh, force] : forces) {

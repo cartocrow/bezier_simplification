@@ -92,7 +92,7 @@ void saveGraphIntoTopoSet(const BaseGraph& graph, TopoSet<Inexact>& topoSet) {
 void BezierSimplificationDemo::loadInput(const std::filesystem::path& path) {
     m_baseGraph.clear();
     m_debugEdge = std::nullopt;
-    m_forcer.m_withinDistEdges.clear();
+    m_forcer.m_withinDistEdgeComponents.clear();
     m_forcer.m_delaunay.clear();
     m_approxGraph.clear();
     m_voronoiPainting = PaintingRenderer{};
@@ -173,6 +173,57 @@ void BezierSimplificationDemo::loadInput(const std::filesystem::path& path) {
     m_referencePolygon = bbox;
 
     m_renderer->fitInView(bbox);
+}
+
+void BezierSimplificationDemo::repaintVoronoi() {
+    m_voronoiPainting = PaintingRenderer();
+    m_voronoiPainting.setMode(GeometryRenderer::stroke);
+    auto voronoiDrawer = VoronoiDrawer<MinimumDistanceForcer<std::monostate, std::monostate>::Gt>(&m_voronoiPainting);
+    for (auto eit = m_forcer.m_delaunay.finite_edges_begin(); eit != m_forcer.m_delaunay.finite_edges_end(); ++eit) {
+        if (m_forcer.filterVoronoiEdge(*eit)) continue;
+        using Exact_SDG_traits = CGAL::Segment_Delaunay_graph_traits_2<Exact>;
+        CGAL::Object o = exact_primal(*eit, m_forcer.m_delaunay);
+
+        Segment<Exact> s;
+        Line<Exact> l;
+        Ray<Exact> r;
+        CGAL::Parabola_segment_2<Exact_SDG_traits> parab;
+        if (CGAL::assign(s, o)) {
+//                if (!isfinite(s.source().x()) || !isfinite(s.target().x())) continue;
+//                std::cout << "Segment: " << s.source() << " -> " << s.target() << std::endl;
+//                if (s.source().)
+//                if (!do_overlap(m_forcer.m_bbox, s.bbox())) continue;
+        }
+        if (CGAL::assign(l, o)) {
+//                continue;
+//                if (!isfinite(l.a()) || !isfinite(l.b()) || !isfinite(l.c())) continue;
+//                std::cout << "Line: " << l.a() << " " << l.b() << " " << l.c() << std::endl;
+        }
+        if (CGAL::assign(r, o)) {
+//                continue;
+//                if (!isfinite(r.source().x())) continue;
+//                std::cout << "Ray: " << r.source() << " " << r.direction() << std::endl;
+
+        }
+        if (CGAL::assign(parab, o)) {
+//                if (!isfinite(parab.p1.x()) || !isfinite(parab.p2.x()) || abs(parab.p1.x()) > 1E9 || abs(parab.p1.y()) > 1E9 || abs(parab.p2.x()) > 1E9 || abs(parab.p2.y()) > 1E9) continue;
+//                std::cout << "Parabola segment: " << parab.p1 << " " << parab.p2 << " " << parab.center() << " " << parab.line() << std::endl;
+//                if (!do_intersect(m_forcer.m_bbox, parab.p1) || !do_intersect(m_forcer.m_bbox, parab.p2)) continue;
+        }
+
+        m_voronoiPainting.setStroke(Color{210, 210, 210}, 1.0);
+        draw_dual_edge_exact(m_forcer.m_delaunay, *eit, voronoiDrawer);
+    }
+
+    for (const auto& comp : m_forcer.m_withinDistEdgeComponents) {
+        if (m_forcer.filterComponent(comp)) continue;
+        for (const auto &[vEdge, dEdge]: comp) {
+            std::visit([&](const auto &geom) {
+                m_voronoiPainting.setStroke(Color{255, 50, 50}, 2.0);
+                voronoiDrawer << geom;
+            }, vEdge);
+        }
+    }
 }
 
 BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_collapse(m_graph, Traits()), m_forcer(m_approxGraph, 1.0) {
@@ -280,13 +331,23 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
     auto* minimumDistanceSettings = new QLabel("<h3>Minimum distance</h3>");
     vLayout->addWidget(minimumDistanceSettings);
 
+    auto* minDistLabel = new QLabel("Minimum distance between lines");
+    vLayout->addWidget(minDistLabel);
     m_minDist = new DoubleSlider(Qt::Horizontal);
     m_minDist->setMaximum(30);
     m_minDist->setMinimum(0);
     m_minDist->setValue(6);
-
     m_forcer.m_requiredMinDist = m_minDist->value();
     vLayout->addWidget(m_minDist);
+
+    auto* minComponentLengthLabel = new QLabel("Minimum component length");
+    vLayout->addWidget(minComponentLengthLabel);
+    m_minComponentLength = new DoubleSlider(Qt::Horizontal);
+    m_minComponentLength->setMaximum(100);
+    m_minComponentLength->setMinimum(0);
+    m_minComponentLength->setValue(10);
+    m_forcer.m_requiredLength = m_minComponentLength->value();
+    vLayout->addWidget(m_minComponentLength);
 
     auto* mdInitializeButton = new QPushButton("Initialize / reset");
     vLayout->addWidget(mdInitializeButton);
@@ -537,63 +598,24 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
     });
 
     connect(m_minDist, &DoubleSlider::valueChanged, [this]() {
-        m_renderer->repaint();
         m_forcer.m_requiredMinDist = m_minDist->value();
-//        m_forcer.recomputeAuxiliary();
+        m_forcer.recomputeDelaunay();
+        m_forcer.recomputeAuxiliary();
+        repaintVoronoi();
+        m_renderer->repaint();
+    });
+
+    connect(m_minComponentLength, &DoubleSlider::valueChanged, [this]() {
+        m_forcer.m_requiredLength = m_minComponentLength->value();
+        repaintVoronoi();
+        m_renderer->repaint();
     });
 
     connect(mdInitializeButton, &QPushButton::clicked, [this]() {
         m_forcer.m_g = approximateBezierGraph(m_baseGraph, std::min(20.0, 1000000.0 / m_baseGraph.number_of_edges()));
         m_forcer.initialize();
 
-        m_voronoiPainting = PaintingRenderer();
-        m_voronoiPainting.setMode(GeometryRenderer::stroke);
-        auto voronoiDrawer = VoronoiDrawer<MinimumDistanceForcer<std::monostate, std::monostate>::Gt>(&m_voronoiPainting);
-        for (auto eit = m_forcer.m_delaunay.finite_edges_begin(); eit != m_forcer.m_delaunay.finite_edges_end(); ++eit) {
-            auto [ps, qs] = m_forcer.defining_storage_sites(*eit);
-            if (m_forcer.withinDistanceAlongIsoline(ps, qs, 2 * m_forcer.m_requiredMinDist)) {
-                continue;
-            }
-            using Exact_SDG_traits = CGAL::Segment_Delaunay_graph_traits_2<Exact>;
-            CGAL::Object o = exact_primal(*eit, m_forcer.m_delaunay);
-
-            Segment<Exact> s;
-            Line<Exact> l;
-            Ray<Exact> r;
-            CGAL::Parabola_segment_2<Exact_SDG_traits> parab;
-            if (CGAL::assign(s, o)) {
-//                if (!isfinite(s.source().x()) || !isfinite(s.target().x())) continue;
-//                std::cout << "Segment: " << s.source() << " -> " << s.target() << std::endl;
-//                if (s.source().)
-//                if (!do_overlap(m_forcer.m_bbox, s.bbox())) continue;
-            }
-            if (CGAL::assign(l, o)) {
-//                continue;
-//                if (!isfinite(l.a()) || !isfinite(l.b()) || !isfinite(l.c())) continue;
-//                std::cout << "Line: " << l.a() << " " << l.b() << " " << l.c() << std::endl;
-            }
-            if (CGAL::assign(r, o)) {
-//                continue;
-//                if (!isfinite(r.source().x())) continue;
-//                std::cout << "Ray: " << r.source() << " " << r.direction() << std::endl;
-
-            }
-            if (CGAL::assign(parab, o)) {
-//                if (!isfinite(parab.p1.x()) || !isfinite(parab.p2.x()) || abs(parab.p1.x()) > 1E9 || abs(parab.p1.y()) > 1E9 || abs(parab.p2.x()) > 1E9 || abs(parab.p2.y()) > 1E9) continue;
-//                std::cout << "Parabola segment: " << parab.p1 << " " << parab.p2 << " " << parab.center() << " " << parab.line() << std::endl;
-//                if (!do_intersect(m_forcer.m_bbox, parab.p1) || !do_intersect(m_forcer.m_bbox, parab.p2)) continue;
-            }
-
-            m_voronoiPainting.setStroke(Color{210, 210, 210}, 1.0);
-            draw_dual_edge_exact(m_forcer.m_delaunay, *eit, voronoiDrawer);
-        }
-
-        for (const auto& [vEdge, dEdge] : m_forcer.m_withinDistEdges) {
-            std::visit([&](const auto &geom) {
-                m_voronoiPainting.setStroke(Color{255, 50, 50}, 2.0);
-                voronoiDrawer << geom;
-            }, vEdge);
-        }
+        repaintVoronoi();
 
         m_renderer->repaint();
     });
@@ -613,7 +635,7 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
     connect(mdReconstructButton, &QPushButton::clicked, [this]() {
         m_baseGraph = reconstructBezierGraph(m_forcer.m_g);
         m_forcer.m_g.clear();
-        m_forcer.m_withinDistEdges.clear();
+        m_forcer.m_withinDistEdgeComponents.clear();
         m_forcer.m_delaunay.clear();
         m_renderer->repaint();
     });
