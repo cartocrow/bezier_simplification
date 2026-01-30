@@ -44,6 +44,7 @@ class BezierSimplificationDemo : public QMainWindow {
 
 	BaseGraph m_baseGraph;
     Graph m_graph;
+    BaseGraph m_beforeReconstruct;
 	Collapse m_collapse;
     std::optional<Edge_handle> m_debugEdge;
     BaseGraph m_original;
@@ -67,7 +68,7 @@ class BezierSimplificationDemo : public QMainWindow {
     QCheckBox* showNewControlPoints;
     QCheckBox* showDebugInfo;
 
-    std::optional<BaseGraph> m_backup;
+    BaseGraph m_backup;
 
     struct ControlPoint {
         Point<Inexact> point;
@@ -114,6 +115,7 @@ class BezierSimplificationDemo : public QMainWindow {
     void addDrawingTab();
     void addPaintings();
     void updateComplexityInfo();
+    void resetEdits();
 
   public:
 	BezierSimplificationDemo();

@@ -1,7 +1,7 @@
 if (NOT EMSCRIPTEN)
 set(SOURCES
     steven_bezier_collapse.cpp
-    fit_cubic.cpp
+    schneider.cpp
     read_graph_gdal.cpp
     intersection_helpers.cpp
 
@@ -25,7 +25,7 @@ set(HEADERS
     indexed_priority_queue.h
     steven_bezier_collapse.h
     curved_graph_with_history.h
-    fit_cubic.h
+    schneider.h
     spiro_helpers/bezctx_cbs.h
     spiro_helpers/spiro_helpers.h
     bezier_curve_quad_tree.h
@@ -49,7 +49,7 @@ set(SOURCES
     spiro_helpers/spiro/spiroentrypoints.c
 
     steven_bezier_collapse.cpp
-    fit_cubic.cpp
+    schneider.cpp
     spiro_helpers/bezctx_cbs.cpp
     intersection_helpers.cpp
 )
@@ -68,7 +68,7 @@ set(HEADERS
     indexed_priority_queue.h
     steven_bezier_collapse.h
     curved_graph_with_history.h
-    fit_cubic.h
+        schneider.h
     spiro_helpers/bezctx_cbs.h
     spiro_helpers/spiro_helpers.h
     bezier_curve_quad_tree.h

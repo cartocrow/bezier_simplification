@@ -304,7 +304,7 @@ void exportTopoSetUsingGDAL(const std::filesystem::path& path, const TopoSet<Ine
             exit(1);
         }*/
 
-        std::vector<std::pair<PolygonSet<Inexact>, RegionAttributes>> polygonSets;
+        std::vector<std::tuple<PolygonSet<Inexact>, RegionAttributes, int>> entries;
 
         for (const auto &feature: topoSet.features) {
             auto psg = get<TopoSet<Inexact>::PolygonSetGeometry>(feature.geometry);
@@ -316,49 +316,48 @@ void exportTopoSetUsingGDAL(const std::filesystem::path& path, const TopoSet<Ine
                 auto pgnWHT = transform(trans, pgnWH);
                 transformed.insert(pgnWHT.outer_boundary());
             }
-            polygonSets.emplace_back(transformed, feature.attributes);
+            entries.emplace_back(transformed, feature.attributes, 0);
         }
 
-        /*IpeRenderer ipeRenderer;*/
+        for (int i = 0; i < entries.size(); ++i) {
+            for (int j = 0; j < entries.size(); ++j) {
+                if (i == j) continue;
+                auto& [pgs1, _1, d1] = entries[i];
+                auto& [pgs2, _2, d2] = entries[j];
+                std::vector<PolygonWithHoles<Inexact>> pgns1;
+                pgs1.polygons_with_holes(std::back_inserter(pgns1));
+                std::vector<PolygonWithHoles<Inexact>> pgns2;
+                pgs2.polygons_with_holes(std::back_inserter(pgns2));
 
-        /*std::sort(polygonSets.begin(), polygonSets.end(), [&ipeRenderer](const auto& a, const auto& b) {
-            std::cout << "===" << std::endl;
-            const PolygonSet<Inexact>& pgs1 = a.first;
-            const PolygonSet<Inexact>& pgs2 = b.first;
-            std::vector<PolygonWithHoles<Inexact>> pgns1;
-            pgs1.polygons_with_holes(std::back_inserter(pgns1));
-            std::vector<PolygonWithHoles<Inexact>> pgns2;
-            pgs2.polygons_with_holes(std::back_inserter(pgns2));
-
-            for (const auto& pgn1 : pgns1) {
-                for (const auto& pgn2 : pgns2) {
-                    ipeRenderer.addPainting([pgn1, pgn2](GeometryRenderer& renderer) {
-                        renderer.setStroke(Color(255, 0, 0), 1.0);
-                        renderer.draw(pgn1);
-                        renderer.setStroke(Color(0, 0, 255), 1.0);
-                        renderer.draw(pgn2);
-                        std::stringstream ss;
-                        ss << "inside: " << (pgn1.outer_boundary().has_on_bounded_side(pgn2.outer_boundary().vertex(0)));
-                        renderer.drawText({ 0, 0 }, ss.str());
-                     });
-                    ipeRenderer.nextPage();
-                    if (pgn1.outer_boundary().has_on_bounded_side(pgn2.outer_boundary().vertex(0))) return true;
+                bool contained = false;
+                for (const auto& pgn1 : pgns1) {
+                    for (const auto& pgn2 : pgns2) {
+                        if (pgn2.outer_boundary().has_on_bounded_side(pgn1.outer_boundary().vertex(0))) {
+                            contained = true;
+                            ++d1;
+                            break;
+                        }
+                    }
+                    if (contained) break;
                 }
             }
+        }
 
-            return false;
-           
-        });*/
+        IpeRenderer ipeRenderer;
 
-        //ipeRenderer.save("debugging_nesting.ipe");
+        std::sort(entries.begin(), entries.end(), [&ipeRenderer](const auto& a, const auto& b) {
+            return std::get<2>(a) < std::get<2>(b);
+        });
+
+        ipeRenderer.save("debugging_nesting.ipe");
 
         int index = 0;
-        for (const auto& ps : polygonSets) {
-            auto mPgn = polygonSetToOGRMultiPolygon(ps.first);
+        for (const auto& ps : entries) {
+            auto mPgn = polygonSetToOGRMultiPolygon(std::get<0>(ps));
             OGRFeature *poFeature;
 
             poFeature = OGRFeature::CreateFeature(poLayer->GetLayerDefn());
-            for (const auto &[attribute, data]: ps.second) {
+            for (const auto &[attribute, data]: std::get<1>(ps)) {
                 if (auto vDouble = std::get_if<double>(&data)) {
                     poFeature->SetField(attribute.c_str(), *vDouble);
                 } else if (auto vInt = std::get_if<int>(&data)) {

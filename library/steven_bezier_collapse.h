@@ -1,12 +1,10 @@
 #pragma once
 
 #include "bezier_collapse.h"
-#include "fit_cubic.h"
+#include "schneider.h"
 #include "spiro_helpers/spiro_helpers.h"
 
 #include <cartocrow/core/arrangement_helpers.h>
-
-// for debugging only; todo: remove
 
 #define DEBUG 0
 

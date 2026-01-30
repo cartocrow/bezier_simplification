@@ -3,13 +3,15 @@
 
 #include "conic_types.h"
 #include "intersection_helpers.h"
-#include "fit_cubic.h"
+#include "schneider.h"
 #include "steven_bezier_collapse.h"
 
 #include <cartocrow/core/core.h>
 #include <cartocrow/core/vector_helpers.h>
 #include <cartocrow/core/segment_delaunay_graph_helpers.h>
 #include <cartocrow/core/delaunay_voronoi_helpers.h>
+
+#include <cartocrow/renderer/ipe_renderer.h>
 
 #include <CGAL/Segment_Delaunay_graph_2.h>
 #include <CGAL/Segment_Delaunay_graph_adaptation_policies_2.h>
@@ -88,7 +90,7 @@ approximateBezierGraph(const BezierGraph& bg, int nPoints) {
 }
 
 template <class BezierGraph>
-BezierGraph reconstructBezierGraph(const ApproximatedBezierGraph<BezierGraph>& sg) {
+BezierGraph reconstructBezierGraph(const ApproximatedBezierGraph<BezierGraph>& sg, double maxSquaredError) {
     using BG = BezierGraph;
     using SG = ApproximatedBezierGraph<BezierGraph>;
 
@@ -108,8 +110,6 @@ BezierGraph reconstructBezierGraph(const ApproximatedBezierGraph<BezierGraph>& s
         }
     }
 
-//    std::unordered_set<const typename BG::Edge*> inserted_edges;
-
     for (auto vit = sg.vertices_begin(); vit != sg.vertices_end(); ++vit) {
         auto& og = vit->data().originalVertex;
         if (og.has_value()) {
@@ -124,7 +124,7 @@ BezierGraph reconstructBezierGraph(const ApproximatedBezierGraph<BezierGraph>& s
 
                 auto current = eh;
                 bool changed = current->data().changed;
-                while(!current->target()->data().originalVertex.has_value()) {
+                while (!current->target()->data().originalVertex.has_value()) {
                     current = current->next();
                     points.push_back(current->target()->point());
                     if (current->data().changed) {
@@ -134,7 +134,23 @@ BezierGraph reconstructBezierGraph(const ApproximatedBezierGraph<BezierGraph>& s
                 points.push_back(current->target()->point());
 
                 const CubicBezierCurve& ogCurve = ogEdge->curve();
-                bg.add_edge(vmap[&*vit], otherVertex, !changed ? ogCurve : (points.size() == 2 ? CubicBezierCurve(points[0], points[1]) : fitCurve(points, ogCurve.tangent(0), -ogCurve.tangent(1), 500)));
+                if (!changed) {
+                    bg.add_edge(vmap[&*vit], otherVertex, ogCurve);
+                } else {
+                    if (points.size() == 2) {
+                        bg.add_edge(vmap[&*vit], otherVertex, CubicBezierCurve(points[0], points[1]));
+                        continue;
+                    }
+                    auto spline = fitSpline(points, maxSquaredError, ogCurve.tangent(0), -ogCurve.tangent(1), 500);
+
+                    auto lastVertex = vmap[&*vit];
+                    for (int i = 0; i < spline.numCurves(); ++i) {
+                        auto c = spline.curve(i);
+                        auto nextVertex = i == spline.numCurves() - 1 ? otherVertex : bg.insert_vertex(c.target());
+                        bg.add_edge(lastVertex, nextVertex, c);
+                        lastVertex = nextVertex;
+                    }
+                }
             }
         }
     }

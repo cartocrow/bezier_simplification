@@ -23,8 +23,6 @@
 void saveGraphIntoTopoSet(const BaseGraph& graph, TopoSet<Inexact>& topoSet) {
     std::unordered_set<const BaseGraph::Edge*> visited;
 
-    //int nSegs = std::max(5.0, (double)31998 / graph.number_of_edges());
-
     for (auto eit = graph.edges_begin(); eit != graph.edges_end(); ++eit) {
         if (visited.contains(&*eit)) {
             continue;
@@ -50,10 +48,7 @@ void saveGraphIntoTopoSet(const BaseGraph& graph, TopoSet<Inexact>& topoSet) {
         }
         auto arcIndex = start->data().index;
 
-        
-
         int arcSize = 1;
-        
 
         visited.insert(&*start);
 
@@ -61,8 +56,6 @@ void saveGraphIntoTopoSet(const BaseGraph& graph, TopoSet<Inexact>& topoSet) {
             int iterations = 0;
             for (auto arcEit = start->next(); iterations < graph.number_of_edges(); arcEit = arcEit->next()) {
                 visited.insert(&*arcEit);
-                //arc.pop_back();
-                //arcEit->curve().samplePoints(nSegs, std::back_inserter(arc));
                 ++arcSize;
                 ++iterations;
                 if (arcEit == end) break;
@@ -75,12 +68,12 @@ void saveGraphIntoTopoSet(const BaseGraph& graph, TopoSet<Inexact>& topoSet) {
         int nPoints = std::max(std::min(1000.0, 31998.0 / arcSize), 5.0);
 
         Polyline<Inexact> arc;
-        start->curve().samplePoints(nPoints, std::back_inserter(arc));
+        start->curve().samplePoints(isStraight(start->curve()) ? 2 : nPoints, std::back_inserter(arc));
 
         if (start != end) {
             for (auto arcEit = start->next(); true; arcEit = arcEit->next()) {
                 arc.pop_back();
-                arcEit->curve().samplePoints(nPoints, std::back_inserter(arc));
+                arcEit->curve().samplePoints(isStraight(arcEit->curve()) ? 2 : nPoints, std::back_inserter(arc));
                 if (arcEit == end) break;
             }
         }
@@ -240,7 +233,7 @@ void BezierSimplificationDemo::repaintVoronoi() {
 }
 
 void BezierSimplificationDemo::updateComplexityInfo() {
-    m_backup = std::nullopt;
+    m_backup.clear();
     complexity->setMinimum(std::min((int) m_graph.number_of_edges(), complexity->minimum()));
     complexity->setValue(m_graph.number_of_edges());
     complexityLabel->setText(QString::fromStdString("#Edges: " + std::to_string(m_graph.number_of_edges())));
@@ -255,6 +248,15 @@ void BezierSimplificationDemo::addIOTab() {
     vLayout->setAlignment(Qt::AlignTop);
     auto* loadFileButton = new QPushButton("Load file");
     vLayout->addWidget(loadFileButton);
+
+    auto* loadReferenceDataButton = new QPushButton("Load reference data");
+    vLayout->addWidget(loadReferenceDataButton);
+
+    auto* loadReferencePolygonButton = new QPushButton("Load reference polygon for image");
+    vLayout->addWidget(loadReferencePolygonButton);
+
+    auto* clearReferenceDataButton = new QPushButton("Clear reference data");
+    vLayout->addWidget(clearReferenceDataButton);
 
     auto* exportButton = new QPushButton("Export");
     vLayout->addWidget(exportButton);
@@ -271,14 +273,8 @@ void BezierSimplificationDemo::addIOTab() {
     editAlignTangents->setChecked(true);
     vLayout->addWidget(editAlignTangents);
 
-    auto* loadReferenceDataButton = new QPushButton("Load reference data");
-    vLayout->addWidget(loadReferenceDataButton);
-
-    auto* loadReferencePolygonButton = new QPushButton("Load reference polygon for image");
-    vLayout->addWidget(loadReferencePolygonButton);
-
-    auto* clearReferenceDataButton = new QPushButton("Clear reference data");
-    vLayout->addWidget(clearReferenceDataButton);
+    auto* resetEditsButton = new QPushButton("Edit: reset edits");
+    vLayout->addWidget(resetEditsButton);
 
     connect(loadFileButton, &QPushButton::clicked, [this]() {
         QString startDir = ".";
@@ -324,9 +320,9 @@ void BezierSimplificationDemo::addIOTab() {
     });
 
     connect(m_editControlPoints, &QCheckBox::stateChanged, [this]() {
-        // todo
-//        if (!m_backup.has_value())
-//            m_backup = m_baseGraph;
+        if (m_backup.number_of_vertices() == 0) {
+            m_backup = m_baseGraph;
+        }
         m_editables.clear();
         for (auto eit = m_baseGraph.edges_begin(); eit != m_baseGraph.edges_end(); ++eit) {
             auto sourceControlEditable = std::make_shared<ControlPoint>(eit->curve().sourceControl(), std::pair(eit, false));
@@ -338,6 +334,11 @@ void BezierSimplificationDemo::addIOTab() {
             auto endpointEditable = std::make_shared<ControlPoint>(vit->point(), vit);
             m_editables.push_back(endpointEditable);
         }
+        m_renderer->repaint();
+    });
+
+    connect(resetEditsButton, &QPushButton::clicked, [this]() {
+        resetEdits();
         m_renderer->repaint();
     });
 
@@ -451,6 +452,14 @@ void BezierSimplificationDemo::addIOTab() {
     });
 }
 
+void BezierSimplificationDemo::resetEdits() {
+    m_editControlPoints->setChecked(false);
+
+    if (m_backup.number_of_vertices() > 0) {
+        m_baseGraph = m_backup;
+    }
+}
+
 void BezierSimplificationDemo::addSimplificationTab() {
     auto* simplificationSettings = new QWidget();
     m_tabs->addTab(simplificationSettings, "Simplification");
@@ -512,23 +521,14 @@ void BezierSimplificationDemo::addSimplificationTab() {
     complexityLog->setPrecision(10000);
     vLayout->addWidget(complexityLog);
 
-    auto resetEdits = [this]() {
-        m_editControlPoints->setChecked(false);
-
-        // todo fix
-//        if (m_backup.has_value()) {
-//            m_baseGraph = *m_backup;
-//        }
-    };
-
-    connect(complexity, &QSlider::valueChanged, [this, resetEdits](int value) {
+    connect(complexity, &QSlider::valueChanged, [this](int value) {
         resetEdits();
         m_graph.recallComplexity(value);
         m_renderer->repaint();
         updateComplexityInfo();
     });
 
-    connect(complexityLog, &DoubleSlider::valueChanged, [this, resetEdits](double value) {
+    connect(complexityLog, &DoubleSlider::valueChanged, [this](double value) {
         resetEdits();
         m_graph.recallComplexity(std::exp(value));
         m_renderer->repaint();
@@ -539,35 +539,35 @@ void BezierSimplificationDemo::addSimplificationTab() {
         m_collapse.initialize();
     });
 
-    connect(stepButton, &QPushButton::clicked, [this, resetEdits]() {
+    connect(stepButton, &QPushButton::clicked, [this]() {
         resetEdits();
         m_collapse.step();
         m_renderer->repaint();
         updateComplexityInfo();
     });
 
-    connect(step10Button, &QPushButton::clicked, [this, resetEdits]() {
+    connect(step10Button, &QPushButton::clicked, [this]() {
         resetEdits();
         for (int i = 0; i < 10; ++i) m_collapse.step();
         m_renderer->repaint();
         updateComplexityInfo();
     });
 
-    connect(step100Button, &QPushButton::clicked, [this, resetEdits]() {
+    connect(step100Button, &QPushButton::clicked, [this]() {
         resetEdits();
         for (int i = 0; i < 100; ++i) m_collapse.step();
         m_renderer->repaint();
         updateComplexityInfo();
     });
 
-    connect(undoButton, &QPushButton::clicked, [this, resetEdits]() {
+    connect(undoButton, &QPushButton::clicked, [this]() {
         resetEdits();
         m_graph.backInTime();
         complexity->setValue(m_graph.number_of_edges());
         m_renderer->repaint();
     });
 
-    connect(undo10Button, &QPushButton::clicked, [this, resetEdits]() {
+    connect(undo10Button, &QPushButton::clicked, [this]() {
         resetEdits();
         for (int i = 0; i < 10; ++i)
             m_graph.backInTime();
@@ -575,7 +575,7 @@ void BezierSimplificationDemo::addSimplificationTab() {
         m_renderer->repaint();
     });
 
-    connect(undo100Button, &QPushButton::clicked, [this, resetEdits]() {
+    connect(undo100Button, &QPushButton::clicked, [this]() {
         resetEdits();
         for (int i = 0; i < 100; ++i)
             m_graph.backInTime();
@@ -583,14 +583,14 @@ void BezierSimplificationDemo::addSimplificationTab() {
         m_renderer->repaint();
     });
 
-    connect(redoButton, &QPushButton::clicked, [this, resetEdits]() {
+    connect(redoButton, &QPushButton::clicked, [this]() {
         resetEdits();
         m_graph.forwardInTime();
         complexity->setValue(m_graph.number_of_edges());
         m_renderer->repaint();
     });
 
-    connect(redo10Button, &QPushButton::clicked, [this, resetEdits]() {
+    connect(redo10Button, &QPushButton::clicked, [this]() {
         resetEdits();
         for (int i = 0; i < 10; ++i)
             m_graph.forwardInTime();
@@ -598,7 +598,7 @@ void BezierSimplificationDemo::addSimplificationTab() {
         m_renderer->repaint();
     });
 
-    connect(redo100Button, &QPushButton::clicked, [this, resetEdits]() {
+    connect(redo100Button, &QPushButton::clicked, [this]() {
         resetEdits();
         for (int i = 0; i < 100; ++i)
             m_graph.forwardInTime();
@@ -671,6 +671,8 @@ void BezierSimplificationDemo::addMinimumDistanceTab() {
     vLayout->addWidget(mdStep100Button);
     auto* mdReconstructButton = new QPushButton("Reconstruct");
     vLayout->addWidget(mdReconstructButton);
+    auto* undoReconstructButton = new QPushButton("Undo reconstruct");
+    vLayout->addWidget(undoReconstructButton);
 
     connect(ignoreBbox, &QCheckBox::stateChanged, [this, ignoreBbox] {
         m_forcer.m_ignoreBbox = ignoreBbox->isChecked();
@@ -717,19 +719,31 @@ void BezierSimplificationDemo::addMinimumDistanceTab() {
     });
 
     connect(mdStep100Button, &QPushButton::clicked, [this]() {
+        QProgressDialog progress("Pushing isolines...", "Abort", 0, 100, this);
+        progress.setWindowModality(Qt::WindowModal);
+        progress.setMinimumDuration(1000);
         for (int i = 0; i < 100; ++i) {
+            progress.setValue(i);
+            if (progress.wasCanceled()) break;
             m_forcer.step();
+            m_renderer->repaint();
         }
         repaintVoronoi();
         m_renderer->repaint();
     });
 
     connect(mdReconstructButton, &QPushButton::clicked, [this]() {
-        m_baseGraph = reconstructBezierGraph(m_forcer.m_g);
+        m_beforeReconstruct = m_baseGraph;
+        m_baseGraph = reconstructBezierGraph(m_forcer.m_g, m_minDist->value() * m_minDist->value() / 16);
         m_forcer.m_g.clear();
         m_forcer.m_withinDistEdgeComponents.clear();
         m_forcer.m_delaunay.clear();
         m_voronoiPainting = {};
+        m_renderer->repaint();
+    });
+
+    connect(undoReconstructButton, &QPushButton::clicked, [this]() {
+        m_baseGraph = m_beforeReconstruct;
         m_renderer->repaint();
     });
 }

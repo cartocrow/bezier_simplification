@@ -1,4 +1,4 @@
-#include "fit_cubic.h"
+#include "schneider.h"
 #include <cmath>
 #include <cassert>
 
@@ -97,6 +97,17 @@ CubicBezierCurve generateBezier(const std::vector<Point<Inexact>>& pts, int firs
                                     const std::vector<double>& uPrime,
                                     const Vector<Inexact>& tHat1, const Vector<Inexact>& tHat2) {
     int nPts = last - first + 1;
+    if (nPts == 3) {
+        auto& a = pts[first];
+        auto& b = pts[first+1];
+        auto& c = pts[last];
+        std::vector<Point<Inexact>> newPts({a, CGAL::midpoint(a, b), b, CGAL::midpoint(b, c), c});
+        auto& ua = uPrime[first];
+        auto& ub = uPrime[first+1];
+        auto& uc = uPrime[last];
+        std::vector<double> uAdapted({ua, (ua + ub) / 2, ub, (ub + uc) / 2, uc});
+        return generateBezier(newPts, 0, 4, uAdapted, tHat1, tHat2);
+    }
     std::vector<std::array<Vector<Inexact>,2>> A(nPts);
     for (int i=0;i<nPts;++i) {
         A[i][0] = tHat1 * B1(uPrime[i]);
@@ -188,6 +199,13 @@ CubicBezierSpline fitSpline(const std::vector<Point<Inexact>>& points, double ma
     Vector<Inexact> tHat1 = computeLeftTangent(points, 0);
     Vector<Inexact> tHat2 = computeRightTangent(points, static_cast<int>(points.size()) - 1);
     fitCubicRecursive(points, 0, static_cast<int>(points.size()) - 1, tHat1, tHat2, maxSquaredError, spline, 10, reparameterizationIterations);
+    return spline;
+}
+
+CubicBezierSpline fitSpline(const std::vector<Point<Inexact>>& points, double maxSquaredError, const Vector<Inexact>& startTangent, const Vector<Inexact>& endTangent, int reparameterizationIterations) {
+    assert(points.size() >= 2);
+    CubicBezierSpline spline;
+    fitCubicRecursive(points, 0, static_cast<int>(points.size()) - 1, normalize(startTangent), normalize(endTangent), maxSquaredError, spline, 10, reparameterizationIterations);
     return spline;
 }
 
