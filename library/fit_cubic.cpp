@@ -193,6 +193,7 @@ CubicBezierSpline fitSpline(const std::vector<Point<Inexact>>& points, double ma
 
 CubicBezierCurve fitCurve(const std::vector<Point<Inexact>>& points, int reparameterizationIterations) {
     assert(points.size() >= 2);
+    if (points.size() == 2) return CubicBezierCurve(points[0], points[1]);
     CubicBezierSpline spline;
     Vector<Inexact> tHat1 = computeLeftTangent(points, 0);
     Vector<Inexact> tHat2 = computeRightTangent(points, static_cast<int>(points.size()) - 1);

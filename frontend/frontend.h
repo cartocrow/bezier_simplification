@@ -1,8 +1,7 @@
 #pragma once
 
 #include <cartocrow/renderer/geometry_widget.h>
-//#include <cartocrow/widgets/double_slider.h>
-#include "double_slider.h"
+#include <cartocrow/widgets/double_slider.h>
 #include "library/core/bezier_graph_2.h"
 #include "library/core/topo_set.h"
 #include "library/core/geometry_set.h"
@@ -13,6 +12,11 @@
 #include <cartocrow/renderer/painting_renderer.h>
 
 #include <QMainWindow>
+#include <QTabWidget>
+#include <QCheckBox>
+#include <QSpinBox>
+#include <QSlider>
+#include <QLabel>
 
 #include <filesystem>
 
@@ -47,9 +51,21 @@ class BezierSimplificationDemo : public QMainWindow {
     CGAL::Aff_transformation_2<Inexact> m_transform;
     OGRSpatialReference m_spatialRef;
     DoubleSlider* m_minDist;
+    DoubleSlider* m_minAdjDist;
     DoubleSlider* m_minComponentLength;
     MinimumDistanceForcer<typename ApproximatedGraph::Vertex_data, typename ApproximatedGraph::Edge_data> m_forcer;
     ApproximatedGraph m_approxGraph;
+    QTabWidget* m_tabs;
+    QCheckBox* m_editControlPoints;
+    QLabel* complexityLabel;
+    QSlider* complexity;
+    DoubleSlider* complexityLog;
+    QSpinBox* desiredComplexity;
+    QCheckBox* showEdgeDirection;
+    QCheckBox* showOldVertices;
+    QCheckBox* showNewVertices;
+    QCheckBox* showNewControlPoints;
+    QCheckBox* showDebugInfo;
 
     std::optional<BaseGraph> m_backup;
 
@@ -92,6 +108,12 @@ class BezierSimplificationDemo : public QMainWindow {
 
     void loadInput(const std::filesystem::path& path);
     void repaintVoronoi();
+    void addIOTab();
+    void addSimplificationTab();
+    void addMinimumDistanceTab();
+    void addDrawingTab();
+    void addPaintings();
+    void updateComplexityInfo();
 
   public:
 	BezierSimplificationDemo();

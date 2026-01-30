@@ -294,6 +294,10 @@ class CollapseHistoryGraphAdaptor {
             forwardInTime();
         }
     }
+    void reset() {
+        m_history = {};
+        m_undone = {};
+    }
 
 //    void startBatch(Number<K> c);
 //    void endBatch();

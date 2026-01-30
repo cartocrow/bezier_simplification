@@ -12,7 +12,7 @@
 #include <QFileDialog>
 #include <QProgressDialog>
 
-#include "double_slider.h"
+#include <cartocrow/widgets/double_slider.h>
 
 #include "library/read_graph_gdal.h"
 #include "read_ipe_bezier_spline.h"
@@ -167,12 +167,22 @@ void BezierSimplificationDemo::loadInput(const std::filesystem::path& path) {
 
     m_baseGraph.orient();
     m_original = m_baseGraph;
-    m_collapse.initialize();
+    m_graph.reset();
 
     auto bbox = m_baseGraph.bbox();
     m_referencePolygon = bbox;
 
     m_renderer->fitInView(bbox);
+
+    complexity->setMaximum(m_graph.number_of_edges());
+    complexity->setMinimum(m_graph.number_of_edges());
+    complexity->setValue(m_graph.number_of_edges());
+    complexityLog->setMaximum(log(m_graph.number_of_edges() + -1.5));
+    complexityLog->setMinimum(log(m_graph.number_of_edges() + -1.5));
+    complexityLog->setValue(log(m_graph.number_of_edges() + -1.5));
+    desiredComplexity->setMinimum(1);
+    desiredComplexity->setMaximum(m_graph.number_of_edges());
+    updateComplexityInfo();
 }
 
 void BezierSimplificationDemo::repaintVoronoi() {
@@ -217,33 +227,32 @@ void BezierSimplificationDemo::repaintVoronoi() {
 
     for (const auto& comp : m_forcer.m_withinDistEdgeComponents) {
         if (m_forcer.filterComponent(comp)) continue;
+
         for (const auto &[vEdge, dEdge]: comp) {
             std::visit([&](const auto &geom) {
-                m_voronoiPainting.setStroke(Color{255, 50, 50}, 2.0);
+                Color red(255, 50, 50);
+                m_voronoiPainting.setStroke(red, 2.0);
                 voronoiDrawer << geom;
             }, vEdge);
         }
+
     }
 }
 
-BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_collapse(m_graph, Traits()), m_forcer(m_approxGraph, 1.0) {
-	setWindowTitle("Bézier simplification");
-	m_renderer = new GeometryWidget();
-	m_renderer->setDrawAxes(false);
-    m_renderer->setMaxZoom(1000000000);
-    m_renderer->setMinZoom(0.00000001);
-	setCentralWidget(m_renderer);
+void BezierSimplificationDemo::updateComplexityInfo() {
+    m_backup = std::nullopt;
+    complexity->setMinimum(std::min((int) m_graph.number_of_edges(), complexity->minimum()));
+    complexity->setValue(m_graph.number_of_edges());
+    complexityLabel->setText(QString::fromStdString("#Edges: " + std::to_string(m_graph.number_of_edges())));
+    complexityLog->setMinimum(std::min(log(m_graph.number_of_edges() + 0.5), complexityLog->minimum()));
+    complexityLog->setValue(log(m_graph.number_of_edges() + 0.5));
+}
 
-	auto* dockWidget = new QDockWidget();
-	addDockWidget(Qt::RightDockWidgetArea, dockWidget);
-	auto* vWidget = new QWidget();
-	auto* vLayout = new QVBoxLayout(vWidget);
-	vLayout->setAlignment(Qt::AlignTop);
-	dockWidget->setWidget(vWidget);
-
-    auto* ioSettings = new QLabel("<h3>Input / output</h3>");
-    vLayout->addWidget(ioSettings);
-
+void BezierSimplificationDemo::addIOTab() {
+    auto* ioSettings = new QWidget();
+    m_tabs->addTab(ioSettings, "IO");
+    auto* vLayout = new QVBoxLayout(ioSettings);
+    vLayout->setAlignment(Qt::AlignTop);
     auto* loadFileButton = new QPushButton("Load file");
     vLayout->addWidget(loadFileButton);
 
@@ -254,9 +263,9 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
     stackPolygons->setChecked(false);
     vLayout->addWidget(stackPolygons);
 
-    auto* editControlPoints = new QCheckBox("Edit control points");
-    editControlPoints->setChecked(false);
-    vLayout->addWidget(editControlPoints);
+    m_editControlPoints = new QCheckBox("Edit control points");
+    m_editControlPoints->setChecked(false);
+    vLayout->addWidget(m_editControlPoints);
 
     auto* editAlignTangents = new QCheckBox("Edit: align tangents");
     editAlignTangents->setChecked(true);
@@ -271,210 +280,11 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
     auto* clearReferenceDataButton = new QPushButton("Clear reference data");
     vLayout->addWidget(clearReferenceDataButton);
 
-    auto* simplificationSettings = new QLabel("<h3>Simplification</h3>");
-    vLayout->addWidget(simplificationSettings);
-
-	auto* stepButton = new QPushButton("Step");
-	vLayout->addWidget(stepButton);
-
-    auto* step10Button = new QPushButton("Step (x10)");
-    vLayout->addWidget(step10Button);
-
-    auto* step100Button = new QPushButton("Step (x100)");
-    vLayout->addWidget(step100Button);
-
-    auto* runToComplexityButton = new QPushButton("Run to specified complexity");
-    vLayout->addWidget(runToComplexityButton);
-    auto* desiredComplexity = new QSpinBox();
-    vLayout->addWidget(desiredComplexity);
-
-    auto* undoButton = new QPushButton("Undo");
-    vLayout->addWidget(undoButton);
-
-    auto* undo10Button = new QPushButton("Undo (x10)");
-    vLayout->addWidget(undo10Button);
-
-    auto* undo100Button = new QPushButton("Undo (x100)");
-    vLayout->addWidget(undo100Button);
-
-    auto* redoButton = new QPushButton("Redo");
-    vLayout->addWidget(redoButton);
-
-    auto* redo10Button = new QPushButton("Redo (x10)");
-    vLayout->addWidget(redo10Button);
-
-    auto* redo100Button = new QPushButton("Redo (x100)");
-    vLayout->addWidget(redo100Button);
-
-	loadInput("splines.ipe");
-
-    auto* complexityLabel = new QLabel("#Edges: ");
-    auto* complexity = new QSlider();
-    auto* complexityLog = new DoubleSlider();
-    complexity->setMaximum(m_graph.number_of_edges());
-    complexity->setMinimum(m_graph.number_of_edges());
-    complexity->setValue(m_graph.number_of_edges());
-    complexityLog->setMaximum(log(m_graph.number_of_edges() + 0.5));
-    complexityLog->setMinimum(log(m_graph.number_of_edges() + 0.5));
-    complexityLog->setValue(log(m_graph.number_of_edges() + 0.5));
-    desiredComplexity->setMinimum(1);
-    desiredComplexity->setMaximum(m_graph.number_of_edges());
-    desiredComplexity->setValue(1);
-
-    complexity->setOrientation(Qt::Horizontal);
-    vLayout->addWidget(complexityLabel);
-    vLayout->addWidget(complexity);
-    complexityLog->setOrientation(Qt::Horizontal);
-    complexityLog->setPrecision(10000);
-    vLayout->addWidget(complexityLog);
-
-    auto* minimumDistanceSettings = new QLabel("<h3>Minimum distance</h3>");
-    vLayout->addWidget(minimumDistanceSettings);
-
-    auto* minDistLabel = new QLabel("Minimum distance between lines");
-    vLayout->addWidget(minDistLabel);
-    m_minDist = new DoubleSlider(Qt::Horizontal);
-    m_minDist->setMaximum(30);
-    m_minDist->setMinimum(0);
-    m_minDist->setValue(6);
-    m_forcer.m_requiredMinDist = m_minDist->value();
-    vLayout->addWidget(m_minDist);
-
-    auto* minComponentLengthLabel = new QLabel("Minimum component length");
-    vLayout->addWidget(minComponentLengthLabel);
-    m_minComponentLength = new DoubleSlider(Qt::Horizontal);
-    m_minComponentLength->setMaximum(100);
-    m_minComponentLength->setMinimum(0);
-    m_minComponentLength->setValue(10);
-    m_forcer.m_requiredLength = m_minComponentLength->value();
-    vLayout->addWidget(m_minComponentLength);
-
-    auto* mdInitializeButton = new QPushButton("Initialize / reset");
-    vLayout->addWidget(mdInitializeButton);
-    auto* mdStepButton = new QPushButton("Step");
-    vLayout->addWidget(mdStepButton);
-    auto* mdStep100Button = new QPushButton("Step (x100)");
-    vLayout->addWidget(mdStep100Button);
-    auto* mdReconstructButton = new QPushButton("Reconstruct");
-    vLayout->addWidget(mdReconstructButton);
-
-    auto* drawSettings = new QLabel("<h3>Drawing</h3>");
-    vLayout->addWidget(drawSettings);
-
-    auto* showEdgeDirection = new QCheckBox("Show edge direction");
-    vLayout->addWidget(showEdgeDirection);
-    auto* showOldVertices = new QCheckBox("Show old vertices");
-    vLayout->addWidget(showOldVertices);
-    auto* showNewVertices = new QCheckBox("Show new vertices");
-    vLayout->addWidget(showNewVertices);
-    auto* showNewControlPoints = new QCheckBox("Show new control points");
-    vLayout->addWidget(showNewControlPoints);
-    auto* showDebugInfo = new QCheckBox("Show debug info");
-    vLayout->addWidget(showDebugInfo);
-
-    /*auto* queueInfo = new QLabel("<h3>Queue</h3>");
-    vLayout->addWidget(queueInfo);
-    auto* scrollArea = new QScrollArea();
-    auto* queueLabel = new QLabel();
-    scrollArea->setWidget(queueLabel);
-    scrollArea->setWidgetResizable(true);
-    scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    scrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
-    scrollArea->setAlignment(Qt::AlignTop);
-    queueLabel->setAlignment(Qt::AlignTop);
-    vLayout->addWidget(scrollArea);*/
-
-    connect(showEdgeDirection, &QCheckBox::stateChanged, [this]() {
-        m_renderer->repaint();
-    });
-    connect(showOldVertices, &QCheckBox::stateChanged, [this]() {
-        m_renderer->repaint();
-    });
-    connect(showNewVertices, &QCheckBox::stateChanged, [this]() {
-        m_renderer->repaint();
-    });
-    connect(showNewControlPoints, &QCheckBox::stateChanged, [this]() {
-        m_renderer->repaint();
-    });
-    connect(showDebugInfo, &QCheckBox::stateChanged, [this]() {
-        m_renderer->repaint();
-    });
-
-    connect(m_renderer, &GeometryWidget::clicked, [this](Point<Inexact> pt) {
-        double minDist2Edge = std::numeric_limits<double>::infinity();
-        std::optional<Graph::Edge_handle> closest;
-        for (auto eit = m_baseGraph.edges_begin(); eit != m_baseGraph.edges_end(); ++eit) {
-            double minDist2 = CGAL::squared_distance(pt, eit->curve().nearest(pt).point);
-            if (minDist2 < minDist2Edge) {
-                minDist2Edge = minDist2;
-                closest = eit;
-            }
-        }
-        if (m_debugEdge == closest) {
-            m_debugEdge = std::nullopt;
-            repaint();
-            return;
-        }
-        m_debugEdge = closest;
-        Traits debugTraits(true);
-        debugTraits.determineCollapse(*m_debugEdge);
-        repaint();
-    });
-
-    auto updateQueueInfo = [this/*, queueLabel*/]() {
-        /*std::stringstream ss;
-        if (!m_collapse.m_q.empty()) {
-            auto top = m_collapse.m_q.pop();
-            ss << "> " << top->data().collapse->cost << "\n";
-            m_collapse.m_q.push(top);
-            std::vector<double> costs;
-            for (auto eit = m_graph.edges_begin(); eit != m_graph.edges_end(); ++eit) {
-                auto clps = eit->data().collapse;
-                if (clps.has_value()) {
-                    costs.push_back(clps->cost);
-                }
-            }
-            std::sort(costs.begin(), costs.end());
-            for (const auto& cost : costs) {
-                ss << cost << "\n";
-            }
-        }
-        queueLabel->setText(QString::fromStdString(ss.str()));*/
-    };
-
-    auto updateComplexityInfo = [complexityLabel, complexity, complexityLog, desiredComplexity, this]() {
-        m_backup = std::nullopt;
-        complexity->setMinimum(std::min((int) m_graph.number_of_edges(), complexity->minimum()));
-        complexity->setValue(m_graph.number_of_edges());
-        complexityLabel->setText(QString::fromStdString("#Edges: " + std::to_string(m_graph.number_of_edges())));
-        complexityLog->setMinimum(std::min(log(m_graph.number_of_edges() + 0.5), complexityLog->minimum()));
-        complexityLog->setValue(log(m_graph.number_of_edges() + 0.5));
-    };
-
-    auto resetEdits = [editControlPoints, this]() {
-        editControlPoints->setChecked(false);
-
-        // todo fix
-//        if (m_backup.has_value()) {
-//            m_baseGraph = *m_backup;
-//        }
-    };
-
-    connect(loadFileButton, &QPushButton::clicked, [this, complexity, updateComplexityInfo, complexityLog, desiredComplexity]() {
+    connect(loadFileButton, &QPushButton::clicked, [this]() {
         QString startDir = ".";
         std::filesystem::path filePath = QFileDialog::getOpenFileName(this, tr("Select input file (.ipe or .shp)"), startDir).toStdString();
         if (filePath == "") return;
         loadInput(filePath);
-
-        complexity->setMaximum(m_graph.number_of_edges());
-        complexity->setMinimum(m_graph.number_of_edges());
-        complexity->setValue(m_graph.number_of_edges());
-        complexityLog->setMaximum(log(m_graph.number_of_edges() + 0.5));
-        complexityLog->setMinimum(log(m_graph.number_of_edges() + 0.5));
-        complexityLog->setValue(log(m_graph.number_of_edges() + 0.5));
-        desiredComplexity->setMaximum(m_graph.number_of_edges());
-
-        updateComplexityInfo();
     });
 
     connect(loadReferenceDataButton, &QPushButton::clicked, [this]() {
@@ -513,134 +323,7 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
         exportTopoSetUsingGDAL(filePath, m_toposet, m_transform.inverse(), m_spatialRef, stackPolygons->isChecked());
     });
 
-    connect(complexity, &QSlider::valueChanged, [this, updateComplexityInfo, resetEdits](int value) {
-        resetEdits();
-        m_graph.recallComplexity(value);
-        m_renderer->repaint();
-        updateComplexityInfo();
-    });
-
-    connect(complexityLog, &DoubleSlider::valueChanged, [this, updateComplexityInfo, resetEdits, complexityLog](double value) {
-        resetEdits();
-        m_graph.recallComplexity(std::exp(value));
-        m_renderer->repaint();
-        updateComplexityInfo();
-    });
-
-	connect(stepButton, &QPushButton::clicked, [this, updateQueueInfo, updateComplexityInfo, resetEdits]() {
-        resetEdits();
-		m_collapse.step();
-		m_renderer->repaint();
-        updateQueueInfo();
-        updateComplexityInfo();
-	});
-
-    connect(step10Button, &QPushButton::clicked, [this, updateComplexityInfo, resetEdits, updateQueueInfo]() {
-        resetEdits();
-        for (int i = 0; i < 10; ++i) m_collapse.step();
-		m_renderer->repaint();
-        updateQueueInfo();
-        updateComplexityInfo();
-	});
-
-    connect(step100Button, &QPushButton::clicked, [this, updateComplexityInfo, resetEdits, updateQueueInfo]() {
-        resetEdits();
-        for (int i = 0; i < 100; ++i) m_collapse.step();
-		m_renderer->repaint();
-        updateQueueInfo();
-        updateComplexityInfo();
-	});
-
-    connect(undoButton, &QPushButton::clicked, [this, complexity, resetEdits]() {
-        resetEdits();
-        m_graph.backInTime();
-        complexity->setValue(m_graph.number_of_edges());
-        m_renderer->repaint();
-    });
-
-    connect(undo10Button, &QPushButton::clicked, [this, complexity, resetEdits]() {
-        resetEdits();
-        for (int i = 0; i < 10; ++i)
-            m_graph.backInTime();
-        complexity->setValue(m_graph.number_of_edges());
-        m_renderer->repaint();
-    });
-
-    connect(undo100Button, &QPushButton::clicked, [this, complexity, resetEdits]() {
-        resetEdits();
-        for (int i = 0; i < 100; ++i)
-            m_graph.backInTime();
-        complexity->setValue(m_graph.number_of_edges());
-        m_renderer->repaint();
-    });
-
-    connect(redoButton, &QPushButton::clicked, [this, complexity, resetEdits]() {
-        resetEdits();
-        m_graph.forwardInTime();
-        complexity->setValue(m_graph.number_of_edges());
-        m_renderer->repaint();
-    });
-
-    connect(redo10Button, &QPushButton::clicked, [this, complexity, resetEdits]() {
-        resetEdits();
-        for (int i = 0; i < 10; ++i)
-            m_graph.forwardInTime();
-        complexity->setValue(m_graph.number_of_edges());
-        m_renderer->repaint();
-    });
-
-    connect(redo100Button, &QPushButton::clicked, [this, complexity, resetEdits]() {
-        resetEdits();
-        for (int i = 0; i < 100; ++i)
-            m_graph.forwardInTime();
-        complexity->setValue(m_graph.number_of_edges());
-        m_renderer->repaint();
-    });
-
-    connect(m_minDist, &DoubleSlider::valueChanged, [this]() {
-        m_forcer.m_requiredMinDist = m_minDist->value();
-        m_forcer.recomputeDelaunay();
-        m_forcer.recomputeAuxiliary();
-        repaintVoronoi();
-        m_renderer->repaint();
-    });
-
-    connect(m_minComponentLength, &DoubleSlider::valueChanged, [this]() {
-        m_forcer.m_requiredLength = m_minComponentLength->value();
-        repaintVoronoi();
-        m_renderer->repaint();
-    });
-
-    connect(mdInitializeButton, &QPushButton::clicked, [this]() {
-        m_forcer.m_g = approximateBezierGraph(m_baseGraph, std::min(20.0, 1000000.0 / m_baseGraph.number_of_edges()));
-        m_forcer.initialize();
-
-        repaintVoronoi();
-
-        m_renderer->repaint();
-    });
-
-    connect(mdStepButton, &QPushButton::clicked, [this]() {
-        m_forcer.step();
-        m_renderer->repaint();
-    });
-
-    connect(mdStep100Button, &QPushButton::clicked, [this]() {
-        for (int i = 0; i < 100; ++i) {
-            m_forcer.step();
-        }
-        m_renderer->repaint();
-    });
-
-    connect(mdReconstructButton, &QPushButton::clicked, [this]() {
-        m_baseGraph = reconstructBezierGraph(m_forcer.m_g);
-        m_forcer.m_g.clear();
-        m_forcer.m_withinDistEdgeComponents.clear();
-        m_forcer.m_delaunay.clear();
-        m_renderer->repaint();
-    });
-
-    connect(editControlPoints, &QCheckBox::stateChanged, [this]() {
+    connect(m_editControlPoints, &QCheckBox::stateChanged, [this]() {
         // todo
 //        if (!m_backup.has_value())
 //            m_backup = m_baseGraph;
@@ -655,23 +338,6 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
             auto endpointEditable = std::make_shared<ControlPoint>(vit->point(), vit);
             m_editables.push_back(endpointEditable);
         }
-        m_renderer->repaint();
-    });
-
-    connect(runToComplexityButton, &QPushButton::clicked, [this, desiredComplexity, updateComplexityInfo]() {
-        auto startComplexity = m_graph.number_of_edges();
-        auto targetComplexity = desiredComplexity->value();
-        QProgressDialog progress("Simplifying...", "Abort", 0, startComplexity - targetComplexity, this);
-        progress.setWindowModality(Qt::WindowModal);
-        progress.setMinimumDuration(1000);
-        m_collapse.runToComplexity(desiredComplexity->value(), [&progress, startComplexity, this](int i) {
-            progress.setValue(startComplexity - i);
-            if (i % 100 == 0)
-                m_renderer->repaint();
-            },
-            [&progress]() { return progress.wasCanceled();
-        });
-        updateComplexityInfo();
         m_renderer->repaint();
     });
 
@@ -783,7 +449,326 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
         m_dragging = nullptr;
         m_renderer->repaint();
     });
+}
 
+void BezierSimplificationDemo::addSimplificationTab() {
+    auto* simplificationSettings = new QWidget();
+    m_tabs->addTab(simplificationSettings, "Simplification");
+    auto* vLayout = new QVBoxLayout(simplificationSettings);
+    vLayout->setAlignment(Qt::AlignTop);
+
+    auto* initializeButton = new QPushButton("Initialize");
+    vLayout->addWidget(initializeButton);
+
+    auto* stepButton = new QPushButton("Step");
+    vLayout->addWidget(stepButton);
+
+    auto* step10Button = new QPushButton("Step (x10)");
+    vLayout->addWidget(step10Button);
+
+    auto* step100Button = new QPushButton("Step (x100)");
+    vLayout->addWidget(step100Button);
+
+    auto* runToComplexityButton = new QPushButton("Run to specified complexity");
+    vLayout->addWidget(runToComplexityButton);
+    desiredComplexity = new QSpinBox();
+    vLayout->addWidget(desiredComplexity);
+
+    auto* undoButton = new QPushButton("Undo");
+    vLayout->addWidget(undoButton);
+
+    auto* undo10Button = new QPushButton("Undo (x10)");
+    vLayout->addWidget(undo10Button);
+
+    auto* undo100Button = new QPushButton("Undo (x100)");
+    vLayout->addWidget(undo100Button);
+
+    auto* redoButton = new QPushButton("Redo");
+    vLayout->addWidget(redoButton);
+
+    auto* redo10Button = new QPushButton("Redo (x10)");
+    vLayout->addWidget(redo10Button);
+
+    auto* redo100Button = new QPushButton("Redo (x100)");
+    vLayout->addWidget(redo100Button);
+
+    complexityLabel = new QLabel("#Edges: ");
+    complexity = new QSlider();
+    complexityLog = new DoubleSlider();
+    complexity->setMaximum(m_graph.number_of_edges());
+    complexity->setMinimum(m_graph.number_of_edges());
+    complexity->setValue(m_graph.number_of_edges());
+    complexityLog->setMaximum(log(m_graph.number_of_edges() + 0.5));
+    complexityLog->setMinimum(log(m_graph.number_of_edges() + 0.5));
+    complexityLog->setValue(log(m_graph.number_of_edges() + 0.5));
+    desiredComplexity->setMinimum(1);
+    desiredComplexity->setMaximum(m_graph.number_of_edges());
+    desiredComplexity->setValue(1);
+
+    complexity->setOrientation(Qt::Horizontal);
+    vLayout->addWidget(complexityLabel);
+    vLayout->addWidget(complexity);
+    complexityLog->setOrientation(Qt::Horizontal);
+    complexityLog->setPrecision(10000);
+    vLayout->addWidget(complexityLog);
+
+    auto resetEdits = [this]() {
+        m_editControlPoints->setChecked(false);
+
+        // todo fix
+//        if (m_backup.has_value()) {
+//            m_baseGraph = *m_backup;
+//        }
+    };
+
+    connect(complexity, &QSlider::valueChanged, [this, resetEdits](int value) {
+        resetEdits();
+        m_graph.recallComplexity(value);
+        m_renderer->repaint();
+        updateComplexityInfo();
+    });
+
+    connect(complexityLog, &DoubleSlider::valueChanged, [this, resetEdits](double value) {
+        resetEdits();
+        m_graph.recallComplexity(std::exp(value));
+        m_renderer->repaint();
+        updateComplexityInfo();
+    });
+
+    connect(initializeButton, &QPushButton::clicked, [this]() {
+        m_collapse.initialize();
+    });
+
+    connect(stepButton, &QPushButton::clicked, [this, resetEdits]() {
+        resetEdits();
+        m_collapse.step();
+        m_renderer->repaint();
+        updateComplexityInfo();
+    });
+
+    connect(step10Button, &QPushButton::clicked, [this, resetEdits]() {
+        resetEdits();
+        for (int i = 0; i < 10; ++i) m_collapse.step();
+        m_renderer->repaint();
+        updateComplexityInfo();
+    });
+
+    connect(step100Button, &QPushButton::clicked, [this, resetEdits]() {
+        resetEdits();
+        for (int i = 0; i < 100; ++i) m_collapse.step();
+        m_renderer->repaint();
+        updateComplexityInfo();
+    });
+
+    connect(undoButton, &QPushButton::clicked, [this, resetEdits]() {
+        resetEdits();
+        m_graph.backInTime();
+        complexity->setValue(m_graph.number_of_edges());
+        m_renderer->repaint();
+    });
+
+    connect(undo10Button, &QPushButton::clicked, [this, resetEdits]() {
+        resetEdits();
+        for (int i = 0; i < 10; ++i)
+            m_graph.backInTime();
+        complexity->setValue(m_graph.number_of_edges());
+        m_renderer->repaint();
+    });
+
+    connect(undo100Button, &QPushButton::clicked, [this, resetEdits]() {
+        resetEdits();
+        for (int i = 0; i < 100; ++i)
+            m_graph.backInTime();
+        complexity->setValue(m_graph.number_of_edges());
+        m_renderer->repaint();
+    });
+
+    connect(redoButton, &QPushButton::clicked, [this, resetEdits]() {
+        resetEdits();
+        m_graph.forwardInTime();
+        complexity->setValue(m_graph.number_of_edges());
+        m_renderer->repaint();
+    });
+
+    connect(redo10Button, &QPushButton::clicked, [this, resetEdits]() {
+        resetEdits();
+        for (int i = 0; i < 10; ++i)
+            m_graph.forwardInTime();
+        complexity->setValue(m_graph.number_of_edges());
+        m_renderer->repaint();
+    });
+
+    connect(redo100Button, &QPushButton::clicked, [this, resetEdits]() {
+        resetEdits();
+        for (int i = 0; i < 100; ++i)
+            m_graph.forwardInTime();
+        complexity->setValue(m_graph.number_of_edges());
+        m_renderer->repaint();
+    });
+
+    connect(runToComplexityButton, &QPushButton::clicked, [this]() {
+        auto startComplexity = m_graph.number_of_edges();
+        auto targetComplexity = desiredComplexity->value();
+        QProgressDialog progress("Simplifying...", "Abort", 0, startComplexity - targetComplexity, this);
+        progress.setWindowModality(Qt::WindowModal);
+        progress.setMinimumDuration(1000);
+        m_collapse.runToComplexity(desiredComplexity->value(), [&progress, startComplexity, this](int i) {
+                                       progress.setValue(startComplexity - i);
+                                       if (i % 100 == 0)
+                                           m_renderer->repaint();
+                                   },
+                                   [&progress]() { return progress.wasCanceled();
+                                   });
+        updateComplexityInfo();
+        m_renderer->repaint();
+    });
+}
+
+void BezierSimplificationDemo::addMinimumDistanceTab() {
+    auto* minimumDistanceSettings = new QWidget();
+    m_tabs->addTab(minimumDistanceSettings, "Minimum distance");
+    auto* vLayout = new QVBoxLayout(minimumDistanceSettings);
+    vLayout->setAlignment(Qt::AlignTop);
+    minimumDistanceSettings->setLayout(vLayout);
+
+    auto* ignoreBbox = new QCheckBox("Ignore bounding box");
+    ignoreBbox->setChecked(true);
+    m_forcer.m_ignoreBbox = ignoreBbox->isChecked();
+    vLayout->addWidget(ignoreBbox);
+
+    auto* minAdjDistLabel = new QLabel("Minimum adjacency distance");
+    vLayout->addWidget(minAdjDistLabel);
+    m_minAdjDist = new DoubleSlider(Qt::Horizontal);
+    m_minAdjDist->setMaximum(30);
+    m_minAdjDist->setMinimum(0);
+    m_minAdjDist->setValue(30);
+    m_forcer.m_minAdjDist = m_minAdjDist->value();
+    vLayout->addWidget(m_minAdjDist);
+
+    auto* minDistLabel = new QLabel("Minimum distance between lines");
+    vLayout->addWidget(minDistLabel);
+    m_minDist = new DoubleSlider(Qt::Horizontal);
+    m_minDist->setMaximum(30);
+    m_minDist->setMinimum(0);
+    m_minDist->setValue(6);
+    m_forcer.m_requiredMinDist = m_minDist->value();
+    vLayout->addWidget(m_minDist);
+
+    auto* minComponentLengthLabel = new QLabel("Minimum component length");
+    vLayout->addWidget(minComponentLengthLabel);
+    m_minComponentLength = new DoubleSlider(Qt::Horizontal);
+    m_minComponentLength->setMaximum(100);
+    m_minComponentLength->setMinimum(0);
+    m_minComponentLength->setValue(0);
+    m_forcer.m_requiredLength = m_minComponentLength->value();
+    vLayout->addWidget(m_minComponentLength);
+
+    auto* mdInitializeButton = new QPushButton("Initialize / reset");
+    vLayout->addWidget(mdInitializeButton);
+    auto* mdStepButton = new QPushButton("Step");
+    vLayout->addWidget(mdStepButton);
+    auto* mdStep100Button = new QPushButton("Step (x100)");
+    vLayout->addWidget(mdStep100Button);
+    auto* mdReconstructButton = new QPushButton("Reconstruct");
+    vLayout->addWidget(mdReconstructButton);
+
+    connect(ignoreBbox, &QCheckBox::stateChanged, [this, ignoreBbox] {
+        m_forcer.m_ignoreBbox = ignoreBbox->isChecked();
+        m_forcer.recomputeDelaunay();
+        m_forcer.recomputeAuxiliary();
+        repaintVoronoi();
+        m_renderer->repaint();
+    });
+
+    connect(m_minAdjDist, &DoubleSlider::valueChanged, [this]() {
+        m_forcer.m_minAdjDist = m_minAdjDist->value();
+        m_forcer.recomputeDelaunay();
+        m_forcer.recomputeAuxiliary();
+        repaintVoronoi();
+        m_renderer->repaint();
+    });
+
+    connect(m_minDist, &DoubleSlider::valueChanged, [this]() {
+        m_forcer.m_requiredMinDist = m_minDist->value();
+        m_forcer.recomputeAuxiliary();
+        repaintVoronoi();
+        m_renderer->repaint();
+    });
+
+    connect(m_minComponentLength, &DoubleSlider::valueChanged, [this]() {
+        m_forcer.m_requiredLength = m_minComponentLength->value();
+        repaintVoronoi();
+        m_renderer->repaint();
+    });
+
+    connect(mdInitializeButton, &QPushButton::clicked, [this]() {
+        m_forcer.m_g = approximateBezierGraph(m_baseGraph, std::min(20.0, 1000000.0 / m_baseGraph.number_of_edges()));
+        m_forcer.initialize();
+
+        repaintVoronoi();
+
+        m_renderer->repaint();
+    });
+
+    connect(mdStepButton, &QPushButton::clicked, [this]() {
+        m_forcer.step();
+        repaintVoronoi();
+        m_renderer->repaint();
+    });
+
+    connect(mdStep100Button, &QPushButton::clicked, [this]() {
+        for (int i = 0; i < 100; ++i) {
+            m_forcer.step();
+        }
+        repaintVoronoi();
+        m_renderer->repaint();
+    });
+
+    connect(mdReconstructButton, &QPushButton::clicked, [this]() {
+        m_baseGraph = reconstructBezierGraph(m_forcer.m_g);
+        m_forcer.m_g.clear();
+        m_forcer.m_withinDistEdgeComponents.clear();
+        m_forcer.m_delaunay.clear();
+        m_voronoiPainting = {};
+        m_renderer->repaint();
+    });
+}
+
+void BezierSimplificationDemo::addDrawingTab() {
+    auto* drawSettings = new QLabel();
+    m_tabs->addTab(drawSettings, "Drawing");
+    auto* vLayout = new QVBoxLayout(drawSettings);
+    vLayout->setAlignment(Qt::AlignTop);
+
+    showEdgeDirection = new QCheckBox("Show edge direction");
+    vLayout->addWidget(showEdgeDirection);
+    showOldVertices = new QCheckBox("Show old vertices");
+    vLayout->addWidget(showOldVertices);
+    showNewVertices = new QCheckBox("Show new vertices");
+    vLayout->addWidget(showNewVertices);
+    showNewControlPoints = new QCheckBox("Show new control points");
+    vLayout->addWidget(showNewControlPoints);
+    showDebugInfo = new QCheckBox("Show debug info");
+    vLayout->addWidget(showDebugInfo);
+
+    connect(showEdgeDirection, &QCheckBox::stateChanged, [this]() {
+        m_renderer->repaint();
+    });
+    connect(showOldVertices, &QCheckBox::stateChanged, [this]() {
+        m_renderer->repaint();
+    });
+    connect(showNewVertices, &QCheckBox::stateChanged, [this]() {
+        m_renderer->repaint();
+    });
+    connect(showNewControlPoints, &QCheckBox::stateChanged, [this]() {
+        m_renderer->repaint();
+    });
+    connect(showDebugInfo, &QCheckBox::stateChanged, [this]() {
+        m_renderer->repaint();
+    });
+}
+
+void BezierSimplificationDemo::addPaintings() {
     m_renderer->addPainting([this](GeometryRenderer& renderer) {
         int i = 0;
         for (const auto& refData : m_referenceData) {
@@ -806,10 +791,10 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
             }
             ++i;
         }
-	}, "Reference data");
+    }, "Reference data");
 
-	m_renderer->addPainting([showOldVertices, this](GeometryRenderer& renderer) {
-		renderer.setStroke(Color(200, 200, 200), 2.0);
+    m_renderer->addPainting([this](GeometryRenderer& renderer) {
+        renderer.setStroke(Color(200, 200, 200), 2.0);
         for (auto eit = m_original.edges_begin(); eit != m_original.edges_end(); ++eit) {
             renderer.draw(eit->curve());
         }
@@ -818,25 +803,7 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
                 renderer.draw(vit->point());
             }
         }
-	}, "Original");
-
-//    m_renderer->addPainting([this](GeometryRenderer& renderer) {
-//        renderer.setMode(GeometryRenderer::stroke);
-//        renderer.setStroke(Color(200, 0, 200), 2.0);
-//        renderer.setStrokeOpacity(10);
-//        for (auto eit = m_baseGraph.edges_begin(); eit != m_baseGraph.edges_end(); ++eit) {
-//            int tSteps = 1000;
-//            auto& curve = eit->curve();
-//            for (int tStep = 0; tStep <= tSteps; ++tStep) {
-//                double t = static_cast<double>(tStep) / tSteps;
-//                auto c = curve.curvature(t);
-//                auto n = curve.normal(t);
-//                n /= sqrt(n.squared_length());
-//                auto p = curve.position(t);
-//                renderer.draw(Segment<Inexact>(p, p + 10 * c * n));
-//            }
-//        }
-//    }, "Curvature");
+    }, "Original");
 
     m_renderer->addPainting([this](GeometryRenderer& renderer) {
         renderer.setMode(GeometryRenderer::fill);
@@ -844,21 +811,21 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
         renderer.draw(Circle<Inexact>(m_renderer->mousePosition(), m_minDist->value() * m_minDist->value()));
     }, "Min. dist. disk");
 
-	m_renderer->addPainting([this, showNewVertices, showNewControlPoints, showEdgeDirection, showDebugInfo](GeometryRenderer& renderer) {
-	  	renderer.setMode(GeometryRenderer::stroke);
-		renderer.setStroke(Color(0, 0, 0), 2.0);
-		for (auto eit = m_baseGraph.edges_begin(); eit != m_baseGraph.edges_end(); ++eit) {
+    m_renderer->addPainting([this](GeometryRenderer& renderer) {
+        renderer.setMode(GeometryRenderer::stroke);
+        renderer.setStroke(Color(0, 0, 0), 2.0);
+        for (auto eit = m_baseGraph.edges_begin(); eit != m_baseGraph.edges_end(); ++eit) {
             if (showDebugInfo->isChecked() && eit->data().collapse.has_value()) {
                 renderer.setStroke(Color(50, 200, 50), 2.0);
             } else {
                 renderer.setStroke(Color(0, 0, 0), 2.0);
             }
-			renderer.draw(eit->curve());
+            renderer.draw(eit->curve());
             if (showEdgeDirection->isChecked()) {
                 renderer.setStroke(Color(0, 0, 0), 6.0);
                 renderer.draw(eit->curve().split(0.25).first);
             }
-		}
+        }
         // Control polylines
         for (auto eit = m_baseGraph.edges_begin(); eit != m_baseGraph.edges_end(); ++eit) {
             if (showNewControlPoints->isChecked()) {
@@ -884,7 +851,7 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
                 renderer.draw(vit->point());
             }
         }
-	}, "Simplification");
+    }, "Simplification");
 
     m_renderer->addPainting([this](GeometryRenderer& renderer) {
         m_voronoiPainting.paint(renderer);
@@ -923,8 +890,8 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
         renderer.draw(op->m_c2);
     }, "Debug edge");
 
-    m_renderer->addPainting([this, editControlPoints](GeometryRenderer& renderer) {
-        if (!editControlPoints->isChecked()) return;
+    m_renderer->addPainting([this](GeometryRenderer& renderer) {
+        if (!m_editControlPoints->isChecked()) return;
 
         // Control polylines
         for (auto eit = m_baseGraph.edges_begin(); eit != m_baseGraph.edges_end(); ++eit) {
@@ -949,6 +916,50 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
             }
         }
     }, "Control points");
+}
+
+BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_collapse(m_graph, Traits()), m_forcer(m_approxGraph, 1.0) {
+	setWindowTitle("CartoCrow: Bézier simplification");
+	m_renderer = new GeometryWidget();
+	m_renderer->setDrawAxes(false);
+    m_renderer->setMaxZoom(1000000000);
+    m_renderer->setMinZoom(0.00000001);
+	setCentralWidget(m_renderer);
+
+	auto* dockWidget = new QDockWidget();
+	addDockWidget(Qt::RightDockWidgetArea, dockWidget);
+    m_tabs = new QTabWidget();
+	dockWidget->setWidget(m_tabs);
+
+    addIOTab();
+    addSimplificationTab();
+    addMinimumDistanceTab();
+    addDrawingTab();
+
+	loadInput("splines.ipe");
+
+    connect(m_renderer, &GeometryWidget::clicked, [this](Point<Inexact> pt) {
+        double minDist2Edge = std::numeric_limits<double>::infinity();
+        std::optional<Graph::Edge_handle> closest;
+        for (auto eit = m_baseGraph.edges_begin(); eit != m_baseGraph.edges_end(); ++eit) {
+            double minDist2 = CGAL::squared_distance(pt, eit->curve().nearest(pt).point);
+            if (minDist2 < minDist2Edge) {
+                minDist2Edge = minDist2;
+                closest = eit;
+            }
+        }
+        if (m_debugEdge == closest) {
+            m_debugEdge = std::nullopt;
+            repaint();
+            return;
+        }
+        m_debugEdge = closest;
+        Traits debugTraits(true);
+        debugTraits.determineCollapse(*m_debugEdge);
+        repaint();
+    });
+
+    addPaintings();
 }
 
 int main(int argc, char* argv[]) {

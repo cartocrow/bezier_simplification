@@ -122,8 +122,8 @@ BezierGraph reconstructBezierGraph(const ApproximatedBezierGraph<BezierGraph>& s
                 std::vector<Point<Inexact>> points;
                 points.push_back(eh->source()->point());
 
-                bool changed = false;
                 auto current = eh;
+                bool changed = current->data().changed;
                 while(!current->target()->data().originalVertex.has_value()) {
                     current = current->next();
                     points.push_back(current->target()->point());
@@ -131,18 +131,10 @@ BezierGraph reconstructBezierGraph(const ApproximatedBezierGraph<BezierGraph>& s
                         changed = true;
                     }
                 }
+                points.push_back(current->target()->point());
 
                 const CubicBezierCurve& ogCurve = ogEdge->curve();
-
-                // need to check if any edge changed.
-                    // skip if edge already exists.
-//                    if (inserted_edges.contains(&*ogEdge)) continue;
-                    // insert edge
-//                    inserted_edges.insert(&*bg.add_edge(vmap[&*vit], otherVertex, ogEdge->curve()));
-
-                bg.add_edge(vmap[&*vit], otherVertex, !changed ? ogCurve : fitCurve(points, ogCurve.tangent(0), -ogCurve.tangent(1)));
-
-//                    bg.add_edge()
+                bg.add_edge(vmap[&*vit], otherVertex, !changed ? ogCurve : (points.size() == 2 ? CubicBezierCurve(points[0], points[1]) : fitCurve(points, ogCurve.tangent(0), -ogCurve.tangent(1), 500)));
             }
         }
     }
@@ -417,6 +409,13 @@ class MinimumDistanceForcer {
 
                 return {Segment<Inexact>(start, end)};
             }
+            else if (auto lP = std::get_if<Line<Inexact>>(&vEdge)) {
+                return site.segment();
+            }
+            else if (auto rP = std::get_if<Ray<Inexact>>(&vEdge)) {
+                // todo
+                return site.segment();
+            }
             else {
                 throw std::runtime_error("Impossible: a segment Voronoi edge is neither a line segment nor a parabolic "
                                          "segment, but at least one of its sites is a line segment.");
@@ -546,22 +545,27 @@ class MinimumDistanceForcer {
     SDG m_delaunay;
     double m_requiredMinDist = 0;
     double m_requiredLength = 0;
+    double m_minAdjDist;
+    bool m_ignoreBbox = false;
     StraightGraph& m_g;
     Box m_bbox;
+
+    bool liesOnBbox(const Point<Inexact>& p) {
+        return abs(p.x() - m_bbox.xmin()) < M_EPSILON ||
+               abs(p.x() - m_bbox.xmax()) < M_EPSILON ||
+               abs(p.y() - m_bbox.ymin()) < M_EPSILON ||
+               abs(p.y() - m_bbox.ymax()) < M_EPSILON;
+    }
+
     void recomputeDelaunay() {
         m_delaunay.clear();
         for (auto eit = m_g.edges_begin(); eit != m_g.edges_end(); ++eit) {
             Segment<Inexact> seg(eit->source()->point(), eit->target()->point());
-            if ((abs(seg.source().x() - m_bbox.xmin()) < 1 ||
-                abs(seg.source().x() - m_bbox.xmax()) < 1 ||
-                abs(seg.source().y() - m_bbox.ymin()) < 1 ||
-                abs(seg.source().y() - m_bbox.ymax()) < 1 ||
-                abs(seg.target().x() - m_bbox.xmin()) < 1 ||
-                abs(seg.target().x() - m_bbox.xmax()) < 1 ||
-                abs(seg.target().y() - m_bbox.ymin()) < 1 ||
-                abs(seg.target().y() - m_bbox.ymax()) < 1) && (
-                abs(seg.source().x() - seg.target().x()) < M_EPSILON ||
-                abs(seg.source().y() - seg.target().y()) < M_EPSILON)
+            if (m_ignoreBbox && (
+                liesOnBbox(seg.source()) &&
+                liesOnBbox(seg.target()))
+//                abs(seg.source().x() - seg.target().x()) < M_EPSILON ||
+//                abs(seg.source().y() - seg.target().y()) < M_EPSILON)
                 ) {
                 continue;
             }
@@ -572,17 +576,27 @@ class MinimumDistanceForcer {
     }
 
     bool filterVoronoiEdge(const typename SDG::Edge& e) {
+//        return false;
         auto v1 = e.first->vertex(SDG::cw(e.second));
         auto v2 = e.first->vertex(SDG::ccw(e.second));
-//        std::cout << v1-> << std::endl;
-//        std::cout << v2-> << std::endl;
+        if (!v1->storage_site().is_defined() || !v2->storage_site().is_defined()) return true;
         auto [p, q] = defining_sites<SDG>(e);
         // Skip edges that are defined by consecutive isoline edges
         if (p.is_segment() && q.is_segment() && (p.source() == q.source() || p.target() == q.target()  || p.source() == q.target() || p.target() == q.source()) ||
             p.is_point()   && q.is_segment() && (p.point()  == q.source() || p.point()  == q.target()) ||
             p.is_segment() && q.is_point()   && (p.source() == q.point()  || p.target() == q.point())) return true;
+        // Skip edges that are defined by sites that lie on the bounding box.
+        auto connectsToBbox = [this](const typename SDG::Site_2& site) {
+            if (site.is_point()) {
+                return liesOnBbox(site.point());
+            } else {
+                const auto& s = site.segment();
+                return liesOnBbox(s.source()) || liesOnBbox(s.target());
+            }
+        };
+        if (m_ignoreBbox && (connectsToBbox(p) || connectsToBbox(q))) return true;
         auto [ps, qs] = defining_storage_sites(e);
-        if (withinDistanceAlongIsoline(ps, qs, 2 * m_requiredMinDist)) return true;
+        if (withinDistanceAlongIsoline(ps, qs, m_minAdjDist)) return true;
         return false;
     }
 
@@ -641,7 +655,7 @@ class MinimumDistanceForcer {
             if (auto vhP = std::get_if<typename StraightGraph::Vertex_handle>(&feature)) {
                 auto& vh = *vhP;
                 Vector<Inexact> force = vh->point() - repeller;
-                force /= force.squared_length();
+                force /= CGAL::sqrt(force.squared_length());
                 force *= magnitude;
 
                 forces.emplace_back(vh, force);
@@ -655,7 +669,7 @@ class MinimumDistanceForcer {
 
                 auto targetPercentage = (repellerProj - seg.source()) * (seg.target() - seg.source()) / seg.squared_length();
 
-                force /= force.squared_length();
+                force /= CGAL::sqrt(force.squared_length());
                 force *= magnitude;
 
                 forces.emplace_back(eh->source(), (1-targetPercentage) * force);
