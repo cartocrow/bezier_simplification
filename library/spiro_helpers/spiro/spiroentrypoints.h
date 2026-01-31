@@ -5,6 +5,7 @@ libspiro - A sharable library of Spiro formula and functions.
 #define _SPIROENTRYPOINTS_H
 #include "bezctx.h"
 #include "spiro.h"
+#include "spiro_intf.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -28,17 +29,23 @@ extern "C" {
 /* programs. Please use the functions listed afterwards that return */
 /* success/failure replies when done. See version 20130930 or later */
 /* WARNING: These two libspiro-20071029 functions can fail silently */
+
 extern void TaggedSpiroCPsToBezier(spiro_cp *spiros,bezctx *bc);
+
 extern void SpiroCPsToBezier(spiro_cp *spiros,int n,int isclosed,bezctx *bc);
 
 /* These functions are available in libspiro-0.2.20130930 or higher */
 /* int=1 on success of creating *bc. int=0 if failed to create *bc. */
+
 extern int TaggedSpiroCPsToBezier0(spiro_cp *spiros,bezctx *bc);
+
 extern int SpiroCPsToBezier0(spiro_cp *spiros,int n,int isclosed,bezctx *bc);
 
 /* These functions are available in libspiro-0.3.20150131 or higher */
 /* done=1 if succeded creating *bc. done=0 if failed to create *bc. */
+
 extern void TaggedSpiroCPsToBezier1(spiro_cp *spiros,bezctx *bc,int *done);
+
 extern void SpiroCPsToBezier1(spiro_cp *spiros,int n,int isclosed,bezctx *bc,int *done);
 
 /* These functions are available in libspiro-20190731 or higher and */
@@ -52,6 +59,7 @@ extern const char *LibSpiroVersion(void);
 /*               the x&y values of this extra cp are ignored        */
 /* ncq allows you to toggle different outputs independent of spiros */
 /* int=1 on success of creating *bc. int=0 if failed to create *bc. */
+
 extern int TaggedSpiroCPsToBezier2(spiro_cp *spiros,int ncq,bezctx *bc);
 
 /* The first argument is an array of spiro control points.          */
@@ -59,6 +67,7 @@ extern int TaggedSpiroCPsToBezier2(spiro_cp *spiros,int ncq,bezctx *bc);
 /* Close contours do not need to end with 'z'                       */
 /* ncq allows you to toggle different outputs independent of spiros */
 /* int=1 on success of creating *bc. int=0 if failed to create *bc. */
+
 extern int SpiroCPsToBezier2(spiro_cp *spiros,int n,int ncq,int isclosed,bezctx *bc);
 
     /* Two more "ty" values for libspiro-20190731 or higher. */

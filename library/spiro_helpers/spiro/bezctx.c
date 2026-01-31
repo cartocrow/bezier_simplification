@@ -37,7 +37,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
 #include "spiro_intf.h"
 #include "bezctx_intf.h"
 
-LS_DLL_EXPORT ls_bezctx *new_ls_bezctx(int max, int ncq) {
+ ls_bezctx *new_ls_bezctx(int max, int ncq) {
     ls_bezctx *r;
 
     if ( (ncq&SPIRO_INTERNAL_BEZCTX)==0 || max<1 || \
@@ -63,7 +63,7 @@ LS_DLL_EXPORT ls_bezctx *new_ls_bezctx(int max, int ncq) {
     return r;
 }
 
-LS_DLL_EXPORT void free_ls_bezctx(ls_bezctx *bd) {
+ void free_ls_bezctx(ls_bezctx *bd) {
     free(bd->cd);
     free(bd);
 }
@@ -100,7 +100,7 @@ static int prep_row_bc(ls_bezctx *bd) {
     return 1;
 }
 
-LS_DLL_LOCAL void bezctx_moveto(bezctx *bc, double x, double y, int is_open, int si) {
+  void bezctx_moveto(bezctx *bc, double x, double y, int is_open, int si) {
 #ifdef VERBOSE
     printf("moveto(%g,%g)_%d\n",x,y,is_open);
 #endif
@@ -119,7 +119,7 @@ LS_DLL_LOCAL void bezctx_moveto(bezctx *bc, double x, double y, int is_open, int
 	bc->moveto(bc, x, y, is_open);
 }
 
-LS_DLL_LOCAL void bezctx_lineto(bezctx *bc, double x, double y, int si) {
+  void bezctx_lineto(bezctx *bc, double x, double y, int si) {
 #ifdef VERBOSE
     printf("lineto(%g,%g)\n",x,y);
 #endif
@@ -137,7 +137,7 @@ LS_DLL_LOCAL void bezctx_lineto(bezctx *bc, double x, double y, int si) {
 	bc->lineto(bc, x, y);
 }
 
-LS_DLL_LOCAL void bezctx_quadto(bezctx *bc, double x1, double y1, double x2, double y2, int si) {
+  void bezctx_quadto(bezctx *bc, double x1, double y1, double x2, double y2, int si) {
 #ifdef VERBOSE
     printf("quadto(%g,%g, %g,%g)\n",x1,y1,x2,y2);
 #endif
@@ -156,7 +156,7 @@ LS_DLL_LOCAL void bezctx_quadto(bezctx *bc, double x1, double y1, double x2, dou
 	bc->quadto(bc, x1, y1, x2, y2);
 }
 
-LS_DLL_LOCAL void bezctx_curveto(bezctx *bc, double x1, double y1, double x2, double y2, \
+  void bezctx_curveto(bezctx *bc, double x1, double y1, double x2, double y2, \
 				 double x3, double y3, int si) {
 #ifdef VERBOSE
     printf("curveto(%g,%g, %g,%g, %g,%g)\n",x1,y1,x2,y2,x3,y3);
@@ -176,7 +176,7 @@ LS_DLL_LOCAL void bezctx_curveto(bezctx *bc, double x1, double y1, double x2, do
 	bc->curveto(bc, x1, y1, x2, y2, x3, y3);
 }
 
-LS_DLL_LOCAL void bezctx_mark_knot(bezctx *bc, int knot_idx, int si) {
+  void bezctx_mark_knot(bezctx *bc, int knot_idx, int si) {
 #ifdef VERBOSE
     printf("mark_knot()_%d\n",knot_idx);
 #endif

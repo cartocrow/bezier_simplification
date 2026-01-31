@@ -4,6 +4,8 @@ libspiro - A sharable library of Spiro formula and functions.
 #ifndef _SPIRO_H
 #define _SPIRO_H
 
+#include "spiro_intf.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -31,8 +33,10 @@ struct spiro_seg_s {
 
 typedef struct spiro_seg_s spiro_seg;
 
+
 spiro_seg *
 run_spiro(const spiro_cp *src, int n); /* deprecated */
+
 
 void
 free_spiro(spiro_seg *s);
@@ -41,6 +45,7 @@ void
 spiro_to_bpath(const spiro_seg *s, int n, bezctx *bc); /* deprecated */
 
 double get_knot_th(const spiro_seg *s, int i);
+
 
 spiro_seg *
 run_spiro0(const spiro_cp *src, double *dm, int ncq, int n);

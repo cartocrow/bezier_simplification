@@ -27,33 +27,33 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
 #include "spiro_intf.h"
 
 /* These six functions are kept for backwards compatibility */
-LS_DLL_EXPORT
+
 void SpiroCPsToBezier(spiro_cp *spiros,int n,int isclosed,bezctx *bc) {
     SpiroCPsToBezier2(spiros,n,SPIRO_RETRO_VER1,isclosed,bc);
 }
-LS_DLL_EXPORT
+
 void TaggedSpiroCPsToBezier(spiro_cp *spiros,bezctx *bc) {
     TaggedSpiroCPsToBezier2(spiros,SPIRO_RETRO_VER1,bc);
 }
-LS_DLL_EXPORT
+
 int SpiroCPsToBezier0(spiro_cp *spiros,int n,int isclosed,bezctx *bc) {
     return SpiroCPsToBezier2(spiros,n,SPIRO_RETRO_VER1,isclosed,bc);
 }
-LS_DLL_EXPORT
+
 int TaggedSpiroCPsToBezier0(spiro_cp *spiros,bezctx *bc) {
     return TaggedSpiroCPsToBezier2(spiros,SPIRO_RETRO_VER1,bc);
 }
-LS_DLL_EXPORT
+
 void SpiroCPsToBezier1(spiro_cp *spiros,int n,int isclosed,bezctx *bc,int *done) {
     *done = SpiroCPsToBezier2(spiros,n,SPIRO_RETRO_VER1,isclosed,bc);
 }
-LS_DLL_EXPORT
+
 void TaggedSpiroCPsToBezier1(spiro_cp *spiros,bezctx *bc,int *done) {
     *done = TaggedSpiroCPsToBezier2(spiros,SPIRO_RETRO_VER1,bc);
 }
 
 
-LS_DLL_EXPORT
+
 int SpiroCPsToBezier2(spiro_cp *spiros,int n,int ncq,int isclosed,bezctx *bc) {
     double dm[6];
     spiro_seg *s;
@@ -83,7 +83,7 @@ int SpiroCPsToBezier2(spiro_cp *spiros,int n,int ncq,int isclosed,bezctx *bc) {
     return 0; /* spiro did not converge or encountered non-finite values */
 }
 
-LS_DLL_EXPORT
+
 int TaggedSpiroCPsToBezier2(spiro_cp *spiros,int ncq,bezctx *bc) {
     double dm[6];
     spiro_seg *s;

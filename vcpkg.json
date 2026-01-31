@@ -4,6 +4,7 @@
     "nlohmann-json",
     "qt5-base",
     "qt5-svg",
+    "qt5-imageformats",
     "gmp",
     {
       "name": "gdal",

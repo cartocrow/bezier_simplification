@@ -288,7 +288,7 @@ void BezierSimplificationDemo::addIOTab() {
         std::filesystem::path filePath = QFileDialog::getOpenFileName(this, tr("Select reference file (.tif or .shp)"), startDir).toStdString();
         if (filePath == "") return;
         if (filePath.extension() == ".tif") {
-            m_referenceData.push_back(QImage(filePath.c_str()));
+            m_referenceData.push_back(QImage(filePath.string().c_str()));
         } else {
             auto geometrySet = readGeometrySetUsingGDAL(filePath);
             m_referenceData.push_back(geometrySet.transform(m_transform));

@@ -1172,7 +1172,7 @@ spiro_seg_to_bpath(const double ks[4],
 /* Spiro calculations might not translate well in the other */
 /* direction, however, there may be a need to reverse path. */
 /* Function leaves src unmodified if cannot reverse values. */
-LS_DLL_EXPORT
+
 int
 spiroreverse(spiro_cp *src, int n)
 {
@@ -1249,7 +1249,7 @@ errspiroreverse:
     return -1;
 }
 
-LS_DLL_EXPORT
+
 spiro_seg *
 run_spiro0(const spiro_cp *src, double *dm, int ncq, int n)
 {
@@ -1268,7 +1268,7 @@ run_spiro0(const spiro_cp *src, double *dm, int ncq, int n)
 }
 
 /* deprecated / backwards compatibility / not scalable */
-LS_DLL_EXPORT
+
 spiro_seg *
 run_spiro(const spiro_cp *src, int n)
 {
@@ -1276,14 +1276,14 @@ run_spiro(const spiro_cp *src, int n)
     return run_spiro0(src, dm, SPIRO_RETRO_VER1, n);
 }
 
-LS_DLL_EXPORT
+
 void
 free_spiro(spiro_seg *s)
 {
     if (s) free(s);
 }
 
-LS_DLL_EXPORT
+
 int
 spiro_to_bpath0(const spiro_cp *src, const spiro_seg *s,
 		double *dm, int ncq, int n, bezctx *bc)
@@ -1374,7 +1374,7 @@ spiro_to_bpath0(const spiro_cp *src, const spiro_seg *s,
 }
 
 /* deprecated / backwards compatibility / not scalable */
-LS_DLL_EXPORT
+
 void
 spiro_to_bpath(const spiro_seg *s, int n, bezctx *bc)
 {
@@ -1383,14 +1383,14 @@ spiro_to_bpath(const spiro_seg *s, int n, bezctx *bc)
     spiro_to_bpath0(NULL, s, dm, SPIRO_RETRO_VER1, n, bc);
 }
 
-LS_DLL_EXPORT
+
 const char *
 LibSpiroVersion(void)
 {
     return( LS_VERSION_STR );
 }
 
-LS_DLL_EXPORT
+
 double
 get_knot_th(const spiro_seg *s, int i)
 {

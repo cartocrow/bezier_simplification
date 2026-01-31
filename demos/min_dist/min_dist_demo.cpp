@@ -110,12 +110,12 @@ MinDistDemo::MinDistDemo() : m_forcer(m_g, 1.0) {
             draw_dual_edge(m_forcer.m_delaunay, *eit, voronoiDrawer);
         }
 
-        for (const auto& [vEdge, dEdge] : m_forcer.m_withinDistEdges) {
-            std::visit([&](const auto &geom) {
-                renderer.setStroke(Color{255, 50, 50}, 2.0);
-                voronoiDrawer << geom;
-            }, vEdge);
-        }
+        //for (const auto& [vEdge, dEdge] : m_forcer.m_withinDistEdges) {
+        //    std::visit([&](const auto &geom) {
+        //        renderer.setStroke(Color{255, 50, 50}, 2.0);
+        //        voronoiDrawer << geom;
+        //    }, vEdge);
+        //}
     }, "Segment Voronoi diagram");
 
     m_renderer->addPainting([this](GeometryRenderer& renderer) {

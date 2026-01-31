@@ -63,12 +63,11 @@ set(HEADERS
     core/graph_2_like.h
     core/region_set.h
     core/topo_set.h
-    ../../core/cartocrow/core/polyline_set.h
     core/geometry_set.h
     indexed_priority_queue.h
     steven_bezier_collapse.h
     curved_graph_with_history.h
-        schneider.h
+    schneider.h
     spiro_helpers/bezctx_cbs.h
     spiro_helpers/spiro_helpers.h
     bezier_curve_quad_tree.h
@@ -95,6 +94,8 @@ target_link_libraries(curved_simplification
         cartocrow::renderer
         cartocrow::reader
         cartocrow::circle_segment_helpers
+
+        GDAL::GDAL
 )
 else()
 target_link_libraries(curved_simplification
@@ -102,6 +103,8 @@ target_link_libraries(curved_simplification
         cartocrow::core
         cartocrow::renderer
         cartocrow::circle_segment_helpers
+
+        GDAL::GDAL
 )
 endif()
 
