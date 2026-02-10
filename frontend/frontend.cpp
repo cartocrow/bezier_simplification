@@ -83,6 +83,8 @@ void saveGraphIntoTopoSet(const BaseGraph& graph, TopoSet<Inexact>& topoSet) {
 }
 
 void BezierSimplificationDemo::loadInput(const std::filesystem::path& path) {
+    double prevScale = getScale();
+
     m_baseGraph.clear();
     m_debugEdge = std::nullopt;
     m_forcer.m_withinDistEdgeComponents.clear();
@@ -151,8 +153,6 @@ void BezierSimplificationDemo::loadInput(const std::filesystem::path& path) {
                 if (!oppositeExists && !alreadyExists) {
                     auto eh = m_baseGraph.add_edge(sourceV, targetV, curve);
                     eh->data().index = i;
-//                    eh->data().
-
                 }
             }
         }
@@ -165,7 +165,7 @@ void BezierSimplificationDemo::loadInput(const std::filesystem::path& path) {
     auto bbox = m_baseGraph.bbox();
     m_referencePolygon = bbox;
 
-    m_renderer->fitInView(bbox);
+    m_renderer->fitInView(transform(bbox, m_transform.inverse()));
 
     complexity->setMaximum(m_graph.number_of_edges());
     complexity->setMinimum(m_graph.number_of_edges());
@@ -175,7 +175,56 @@ void BezierSimplificationDemo::loadInput(const std::filesystem::path& path) {
     complexityLog->setValue(log(m_graph.number_of_edges() + -1.5));
     desiredComplexity->setMinimum(1);
     desiredComplexity->setMaximum(m_graph.number_of_edges());
+    m_minDist->setMaximum(getScale() * 30);
+    m_minAdjDist->setMaximum(getScale() * 30);
+    m_minComponentLength->setMaximum(getScale() * 100);
+    m_minDist->setValue(getScale() / prevScale * m_minDist->value());
+    m_minAdjDist->setValue(getScale() / prevScale * m_minAdjDist->value());
+    m_minComponentLength->setValue(getScale() / prevScale * m_minComponentLength->value());
     updateComplexityInfo();
+}
+
+CGAL::Object transform(const CGAL::Object& o, const CGAL::Aff_transformation_2<Exact>& trans) {
+    using Exact_SDG_traits = CGAL::Segment_Delaunay_graph_traits_2<Exact>;
+    Segment<Exact> s;
+    Line<Exact> l;
+    Ray<Exact> r;
+    CGAL::Parabola_segment_2<Exact_SDG_traits> parab;
+
+    std::variant<Segment<Exact>, Line<Exact>, Ray<Exact>, CGAL::Parabola_segment_2<Exact_SDG_traits>> var;
+    if (CGAL::assign(s, o)) {
+        var = s.transform(trans);
+    }
+    if (CGAL::assign(l, o)) {
+        var = l.transform(trans);
+    }
+    if (CGAL::assign(r, o)) {
+        var = r.transform(trans);
+    }
+    if (CGAL::assign(parab, o)) {
+        var = cartocrow::transform(parab, trans);
+    }
+
+    return var;
+}
+
+Forcer::VoronoiEdge transform(const Forcer::VoronoiEdge& vEdge, const CGAL::Aff_transformation_2<Inexact>& trans) {
+    if (auto sP = std::get_if<Segment<Inexact>>(&vEdge)) {
+        auto& s = *sP;
+        return s.transform(trans);
+    }
+    if (auto psP = std::get_if<CGAL::Parabola_segment_2<Forcer::Gt>>(&vEdge)) {
+        auto& ps = *psP;
+        return cartocrow::transform(ps, trans);
+    }
+    if (auto lP = std::get_if<Line<Inexact>>(&vEdge)) {
+        auto& l = *lP;
+        return l.transform(trans);
+    }
+    if (auto rP = std::get_if<Ray<Inexact>>(&vEdge)) {
+        auto& r = *rP;
+        return r.transform(trans);
+    }
 }
 
 void BezierSimplificationDemo::repaintVoronoi() {
@@ -185,37 +234,27 @@ void BezierSimplificationDemo::repaintVoronoi() {
     for (auto eit = m_forcer.m_delaunay.finite_edges_begin(); eit != m_forcer.m_delaunay.finite_edges_end(); ++eit) {
         if (m_forcer.filterVoronoiEdge(*eit)) continue;
         using Exact_SDG_traits = CGAL::Segment_Delaunay_graph_traits_2<Exact>;
-        CGAL::Object o = exact_primal(*eit, m_forcer.m_delaunay);
+        CGAL::Object o = transform(exact_primal(*eit, m_forcer.m_delaunay), pretendExact(m_transform.inverse()));
+
+        m_voronoiPainting.setStroke(Color{ 210, 210, 210 }, 1.0);
 
         Segment<Exact> s;
         Line<Exact> l;
         Ray<Exact> r;
         CGAL::Parabola_segment_2<Exact_SDG_traits> parab;
         if (CGAL::assign(s, o)) {
-//                if (!isfinite(s.source().x()) || !isfinite(s.target().x())) continue;
-//                std::cout << "Segment: " << s.source() << " -> " << s.target() << std::endl;
-//                if (s.source().)
-//                if (!do_overlap(m_forcer.m_bbox, s.bbox())) continue;
+            voronoiDrawer << s;
         }
         if (CGAL::assign(l, o)) {
-//                continue;
-//                if (!isfinite(l.a()) || !isfinite(l.b()) || !isfinite(l.c())) continue;
-//                std::cout << "Line: " << l.a() << " " << l.b() << " " << l.c() << std::endl;
+            voronoiDrawer << l;
         }
         if (CGAL::assign(r, o)) {
-//                continue;
-//                if (!isfinite(r.source().x())) continue;
-//                std::cout << "Ray: " << r.source() << " " << r.direction() << std::endl;
+            voronoiDrawer << r;
 
         }
         if (CGAL::assign(parab, o)) {
-//                if (!isfinite(parab.p1.x()) || !isfinite(parab.p2.x()) || abs(parab.p1.x()) > 1E9 || abs(parab.p1.y()) > 1E9 || abs(parab.p2.x()) > 1E9 || abs(parab.p2.y()) > 1E9) continue;
-//                std::cout << "Parabola segment: " << parab.p1 << " " << parab.p2 << " " << parab.center() << " " << parab.line() << std::endl;
-//                if (!do_intersect(m_forcer.m_bbox, parab.p1) || !do_intersect(m_forcer.m_bbox, parab.p2)) continue;
+            voronoiDrawer << parab;
         }
-
-        m_voronoiPainting.setStroke(Color{210, 210, 210}, 1.0);
-        draw_dual_edge_exact(m_forcer.m_delaunay, *eit, voronoiDrawer);
     }
 
     for (const auto& comp : m_forcer.m_withinDistEdgeComponents) {
@@ -226,7 +265,7 @@ void BezierSimplificationDemo::repaintVoronoi() {
                 Color red(255, 50, 50);
                 m_voronoiPainting.setStroke(red, 2.0);
                 voronoiDrawer << geom;
-            }, vEdge);
+            }, transform(vEdge, m_transform.inverse()));
         }
 
     }
@@ -291,7 +330,7 @@ void BezierSimplificationDemo::addIOTab() {
             m_referenceData.push_back(QImage(filePath.string().c_str()));
         } else {
             auto geometrySet = readGeometrySetUsingGDAL(filePath);
-            m_referenceData.push_back(geometrySet.transform(m_transform));
+            m_referenceData.push_back(geometrySet);
         }
     });
 
@@ -306,9 +345,7 @@ void BezierSimplificationDemo::addIOTab() {
         auto regionSet = readRegionSetUsingGDAL(filePath);
         std::vector<PolygonWithHoles<Inexact>> pgns;
         regionSet.first[0].geometry.polygons_with_holes(std::back_inserter(pgns));
-        Rectangle<Inexact> rect = pgns[0].bbox();
-        auto rectT = rect.transform(m_transform);
-        m_referencePolygon = Box(rectT.xmin(), rectT.ymin(), rectT.xmax(), rectT.ymax());
+        m_referencePolygon = pgns[0].bbox();
     });
 
     connect(exportButton, &QPushButton::clicked, [this, stackPolygons]() {
@@ -349,7 +386,7 @@ void BezierSimplificationDemo::addIOTab() {
         double minDist = std::numeric_limits<double>::infinity();
 
         for (auto editable : m_editables) {
-            auto diff = m_renderer->convertPoint(editable->point) - m_renderer->convertPoint(p);
+            auto diff = m_renderer->convertPoint(editable->point) - m_renderer->convertPoint(p.transform(m_transform));
             auto d2 = diff.x() * diff.x() + diff.y() * diff.y();
             if (d2 < 400 && d2 < minDist) {
                 minDist = d2;
@@ -363,7 +400,8 @@ void BezierSimplificationDemo::addIOTab() {
         m_renderer->repaint();
     });
 
-    connect(m_renderer, &GeometryWidget::dragMoved, [this, editAlignTangents](const Point<Inexact>& p) {
+    connect(m_renderer, &GeometryWidget::dragMoved, [this, editAlignTangents](const Point<Inexact>& px) {
+        auto p = px.transform(m_transform);
         if (m_dragging != nullptr) {
             m_dragging->point = p;
             if (auto vhP = std::get_if<Vertex_handle>(&m_dragging->type)) {
@@ -638,30 +676,49 @@ void BezierSimplificationDemo::addMinimumDistanceTab() {
 
     auto* minAdjDistLabel = new QLabel("Minimum adjacency distance");
     vLayout->addWidget(minAdjDistLabel);
-    m_minAdjDist = new DoubleSlider(Qt::Horizontal);
-    m_minAdjDist->setMaximum(30);
+    auto* minAdjDist = new DoubleSlider(Qt::Horizontal);
+    vLayout->addWidget(minAdjDist);
+
+    auto* minAdjDistSpinBox = new QDoubleSpinBox();
+    minAdjDistSpinBox->setSuffix(" m");
+    vLayout->addWidget(minAdjDistSpinBox);
+
+    m_minAdjDist = std::make_unique<DoubleSliderSpinBox>(minAdjDist, minAdjDistSpinBox);
     m_minAdjDist->setMinimum(0);
-    m_minAdjDist->setValue(30);
-    m_forcer.m_minAdjDist = m_minAdjDist->value();
-    vLayout->addWidget(m_minAdjDist);
+    m_minAdjDist->setMaximum(getScale() * 30);
+    m_minAdjDist->setValue(getScale() * 30);
+    m_forcer.m_minAdjDist = m_minAdjDist->value() / getScale();
 
     auto* minDistLabel = new QLabel("Minimum distance between lines");
     vLayout->addWidget(minDistLabel);
-    m_minDist = new DoubleSlider(Qt::Horizontal);
-    m_minDist->setMaximum(30);
+    auto* minDist = new DoubleSlider(Qt::Horizontal);
+    vLayout->addWidget(minDist);
+
+    auto* minDistSpinBox = new QDoubleSpinBox();
+    minDistSpinBox->setSuffix(" m");
+    vLayout->addWidget(minDistSpinBox);
+
+    m_minDist = std::make_unique<DoubleSliderSpinBox>(minDist, minDistSpinBox);
     m_minDist->setMinimum(0);
-    m_minDist->setValue(6);
-    m_forcer.m_requiredMinDist = m_minDist->value();
-    vLayout->addWidget(m_minDist);
+    m_minDist->setMaximum(getScale() * 30);
+    m_minDist->setValue(getScale() * 6);
+    m_forcer.m_requiredMinDist = minDist->value();
 
     auto* minComponentLengthLabel = new QLabel("Minimum component length");
     vLayout->addWidget(minComponentLengthLabel);
-    m_minComponentLength = new DoubleSlider(Qt::Horizontal);
-    m_minComponentLength->setMaximum(100);
+    auto* minComponentLength = new DoubleSlider(Qt::Horizontal);
+    
+    vLayout->addWidget(minComponentLength);
+
+    auto* minCompLengthSpinBox = new QDoubleSpinBox();
+    minCompLengthSpinBox->setSuffix(" m");
+    vLayout->addWidget(minCompLengthSpinBox);
+
+    m_minComponentLength = std::make_unique<DoubleSliderSpinBox>(minComponentLength, minCompLengthSpinBox);
     m_minComponentLength->setMinimum(0);
+    m_minComponentLength->setMaximum(getScale() * 100);
     m_minComponentLength->setValue(0);
     m_forcer.m_requiredLength = m_minComponentLength->value();
-    vLayout->addWidget(m_minComponentLength);
 
     auto* mdInitializeButton = new QPushButton("Initialize / reset");
     vLayout->addWidget(mdInitializeButton);
@@ -682,23 +739,23 @@ void BezierSimplificationDemo::addMinimumDistanceTab() {
         m_renderer->repaint();
     });
 
-    connect(m_minAdjDist, &DoubleSlider::valueChanged, [this]() {
-        m_forcer.m_minAdjDist = m_minAdjDist->value();
+    connect(&*m_minAdjDist, &DoubleSliderSpinBox::valueChanged, [this](double v) {
+        m_forcer.m_minAdjDist = v / getScale();
         m_forcer.recomputeDelaunay();
         m_forcer.recomputeAuxiliary();
         repaintVoronoi();
         m_renderer->repaint();
     });
 
-    connect(m_minDist, &DoubleSlider::valueChanged, [this]() {
-        m_forcer.m_requiredMinDist = m_minDist->value();
+    connect(&*m_minDist, &DoubleSliderSpinBox::valueChanged, [this](double v) {
+        m_forcer.m_requiredMinDist = v / getScale();
         m_forcer.recomputeAuxiliary();
         repaintVoronoi();
         m_renderer->repaint();
     });
 
-    connect(m_minComponentLength, &DoubleSlider::valueChanged, [this]() {
-        m_forcer.m_requiredLength = m_minComponentLength->value();
+    connect(&*m_minComponentLength, &DoubleSliderSpinBox::valueChanged, [this](double v) {
+        m_forcer.m_requiredLength = v / getScale();
         repaintVoronoi();
         m_renderer->repaint();
     });
@@ -725,7 +782,7 @@ void BezierSimplificationDemo::addMinimumDistanceTab() {
         for (int i = 0; i < 100; ++i) {
             progress.setValue(i);
             if (progress.wasCanceled()) break;
-            m_forcer.step();
+            if (!m_forcer.step()) break;
             m_renderer->repaint();
         }
         repaintVoronoi();
@@ -734,7 +791,7 @@ void BezierSimplificationDemo::addMinimumDistanceTab() {
 
     connect(mdReconstructButton, &QPushButton::clicked, [this]() {
         m_beforeReconstruct = m_baseGraph;
-        m_baseGraph = reconstructBezierGraph(m_forcer.m_g, m_minDist->value() * m_minDist->value() / 16);
+        m_baseGraph = reconstructBezierGraph(m_forcer.m_g, m_minDist->value() / getScale() * m_minDist->value() / getScale() / 16);
         m_forcer.m_g.clear();
         m_forcer.m_withinDistEdgeComponents.clear();
         m_forcer.m_delaunay.clear();
@@ -782,11 +839,16 @@ void BezierSimplificationDemo::addDrawingTab() {
     });
 }
 
+double BezierSimplificationDemo::getScale() const {
+    auto unitXT = Vector<Inexact>(1, 0).transform(m_transform.inverse());
+    return unitXT.x();
+}
+
 void BezierSimplificationDemo::addPaintings() {
     m_renderer->addPainting([this](GeometryRenderer& renderer) {
         int i = 0;
         for (const auto& refData : m_referenceData) {
-            renderer.setStroke(m_colors.at(i).shaded(1.5), 2.0);
+            renderer.setStroke(m_colors.at(i), 2.0);
             if (auto qImageP = std::get_if<QImage>(&refData)) {
                 auto& qImage = *qImageP;
                 const auto formats = QImageReader::supportedImageFormats();
@@ -794,7 +856,6 @@ void BezierSimplificationDemo::addPaintings() {
                     std::cerr << "No support for tiff" << std::endl;
                 }
                 if (auto gw = dynamic_cast<GeometryWidget*>(&renderer)) {
-//                    gw->drawImage(qImage.size())
                     gw->drawImage(m_referencePolygon, qImage);
                 }
             } else if (auto geometrySetP = std::get_if<GeometrySet<Inexact>>(&refData)) {
@@ -810,11 +871,11 @@ void BezierSimplificationDemo::addPaintings() {
     m_renderer->addPainting([this](GeometryRenderer& renderer) {
         renderer.setStroke(Color(200, 200, 200), 2.0);
         for (auto eit = m_original.edges_begin(); eit != m_original.edges_end(); ++eit) {
-            renderer.draw(eit->curve());
+            renderer.draw(eit->curve().transform(m_transform.inverse()));
         }
         if (showOldVertices->isChecked()) {
             for (auto vit = m_original.vertices_begin(); vit != m_original.vertices_end(); ++vit) {
-                renderer.draw(vit->point());
+                renderer.draw(vit->point().transform(m_transform.inverse()));
             }
         }
     }, "Original");
@@ -826,6 +887,7 @@ void BezierSimplificationDemo::addPaintings() {
     }, "Min. dist. disk");
 
     m_renderer->addPainting([this](GeometryRenderer& renderer) {
+        auto inv = m_transform.inverse();
         renderer.setMode(GeometryRenderer::stroke);
         renderer.setStroke(Color(0, 0, 0), 2.0);
         for (auto eit = m_baseGraph.edges_begin(); eit != m_baseGraph.edges_end(); ++eit) {
@@ -834,10 +896,10 @@ void BezierSimplificationDemo::addPaintings() {
             } else {
                 renderer.setStroke(Color(0, 0, 0), 2.0);
             }
-            renderer.draw(eit->curve());
+            renderer.draw(eit->curve().transform(inv));
             if (showEdgeDirection->isChecked()) {
                 renderer.setStroke(Color(0, 0, 0), 6.0);
-                renderer.draw(eit->curve().split(0.25).first);
+                renderer.draw(eit->curve().split(0.25).first.transform(inv));
             }
         }
         // Control polylines
@@ -846,23 +908,23 @@ void BezierSimplificationDemo::addPaintings() {
                 renderer.setStroke(Color(0, 255, 0), 1.0);
                 Polyline<Inexact> pl;
                 for (int c = 0; c < 4; ++c) pl.push_back(eit->curve().control(c));
-                renderer.draw(pl);
+                renderer.draw(pl.transform(inv));
             }
         }
         // Control points
         for (auto eit = m_baseGraph.edges_begin(); eit != m_baseGraph.edges_end(); ++eit) {
             if (showNewControlPoints->isChecked()) {
                 renderer.setStroke(Color(0, 0, 255), 2.0);
-                renderer.draw(eit->curve().sourceControl());
-                renderer.draw(eit->curve().targetControl());
+                renderer.draw(eit->curve().sourceControl().transform(inv));
+                renderer.draw(eit->curve().targetControl().transform(inv));
                 renderer.setStroke(Color(255, 0, 255), 2.0);
-                renderer.draw(eit->curve().source());
-                renderer.draw(eit->curve().target());
+                renderer.draw(eit->curve().source().transform(inv));
+                renderer.draw(eit->curve().target().transform(inv));
             }
         }
         if (showNewVertices->isChecked()) {
             for (auto vit = m_baseGraph.vertices_begin(); vit != m_baseGraph.vertices_end(); ++vit) {
-                renderer.draw(vit->point());
+                renderer.draw(vit->point().transform(inv));
             }
         }
     }, "Simplification");
@@ -872,16 +934,18 @@ void BezierSimplificationDemo::addPaintings() {
     }, "Segment Voronoi diagram");
 
     m_renderer->addPainting([this](GeometryRenderer& renderer) {
+        auto inv = m_transform.inverse();
         renderer.setStroke(Color{0, 0, 0}, 2.0);
         for (auto eit = m_forcer.m_g.edges_begin(); eit != m_forcer.m_g.edges_end(); ++eit) {
-            renderer.draw(eit->curve());
+            renderer.draw(eit->curve().transform(inv));
         }
         for (auto vit = m_forcer.m_g.vertices_begin(); vit != m_forcer.m_g.vertices_end(); ++vit) {
-            renderer.draw(vit->point());
+            renderer.draw(vit->point().transform(inv));
         }
     }, "Linearized");
 
     m_renderer->addPainting([this](GeometryRenderer& renderer) {
+        auto inv = m_transform.inverse();
         if (!m_debugEdge.has_value()) return;
         renderer.setStroke(Color(255, 0, 0), 2.0);
         auto eh = *m_debugEdge;
@@ -890,21 +954,22 @@ void BezierSimplificationDemo::addPaintings() {
         renderer.setStroke(Color(50, 200, 50), 2.0);
         if (d.collapse.has_value()) {
             const auto& col = *d.collapse;
-            renderer.draw(col.before);
-            renderer.draw(col.after);
-            auto bb = col.before.bbox();
+            renderer.draw(col.before.transform(inv));
+            renderer.draw(col.after.transform(inv));
+            auto bb = col.before.transform(inv).bbox();
             auto bbC = Point<Inexact>((bb.xmin() + bb.xmax()) / 2, (bb.ymin() + bb.ymax())  / 2);
             renderer.drawText(bbC, std::to_string(col.cost));
         }
         if (d.hist == nullptr) return;
         auto op = std::dynamic_pointer_cast<curved_simplification::detail::CollapseEdgeOperation<BaseGraph>>(d.hist);
         renderer.setStroke(Color(200, 50, 200), 2.0);
-        renderer.draw(op->m_c0);
-        renderer.draw(op->m_c1);
-        renderer.draw(op->m_c2);
+        renderer.draw(op->m_c0.transform(inv));
+        renderer.draw(op->m_c1.transform(inv));
+        renderer.draw(op->m_c2.transform(inv));
     }, "Debug edge");
 
     m_renderer->addPainting([this](GeometryRenderer& renderer) {
+        auto inv = m_transform.inverse();
         if (!m_editControlPoints->isChecked()) return;
 
         // Control polylines
@@ -912,20 +977,20 @@ void BezierSimplificationDemo::addPaintings() {
             renderer.setStroke(Color(0, 255, 0), 1.0);
             Polyline<Inexact> pl;
             for (int c = 0; c < 4; ++c) pl.push_back(eit->curve().control(c));
-            renderer.draw(pl);
+            renderer.draw(pl.transform(inv));
         }
 
         for (auto editable : m_editables) {
             if (auto vhP = std::get_if<Vertex_handle>(&editable->type)) {
                 renderer.setStroke(Color(255, 0, 255), 2.0);
-                renderer.draw(editable->point);
+                renderer.draw(editable->point.transform(inv));
             } else if (auto eiP = std::get_if<std::pair<Edge_handle, bool>>(&editable->type)) {
                 renderer.setStroke(Color(0, 0, 255), 2.0);
                 auto [eh, b] = *eiP;
                 if (b) {
-                    renderer.draw(editable->point);
+                    renderer.draw(editable->point.transform(inv));
                 } else {
-                    renderer.draw(editable->point);
+                    renderer.draw(editable->point.transform(inv));
                 }
             }
         }
@@ -956,7 +1021,7 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
         double minDist2Edge = std::numeric_limits<double>::infinity();
         std::optional<Graph::Edge_handle> closest;
         for (auto eit = m_baseGraph.edges_begin(); eit != m_baseGraph.edges_end(); ++eit) {
-            double minDist2 = CGAL::squared_distance(pt, eit->curve().nearest(pt).point);
+            double minDist2 = CGAL::squared_distance(pt.transform(m_transform), eit->curve().nearest(pt).point);
             if (minDist2 < minDist2Edge) {
                 minDist2Edge = minDist2;
                 closest = eit;

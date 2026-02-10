@@ -16,6 +16,7 @@
 #include <QCheckBox>
 #include <QSpinBox>
 #include <QSlider>
+#include <QObject>
 #include <QLabel>
 
 #include <filesystem>
@@ -33,8 +34,60 @@ using Traits = StevenBCTraits<Graph>;
 using Collapse = BezierCollapse<Graph, Traits>;
 using Edge_handle = Graph::Edge_handle;
 using Vertex_handle = Graph::Vertex_handle;
+using Forcer = MinimumDistanceForcer<typename ApproximatedGraph::Vertex_data, typename ApproximatedGraph::Edge_data>;
 
 using ReferenceData = std::variant<QImage, GeometrySet<Inexact>>;
+
+class DoubleSliderSpinBox : public QObject {
+    Q_OBJECT
+
+private:
+    double m_value;
+    DoubleSlider* m_slider;
+    QDoubleSpinBox* m_spinBox;
+
+public:
+    DoubleSliderSpinBox() = default;
+    DoubleSliderSpinBox& operator=(const DoubleSliderSpinBox& other) = default;
+
+    DoubleSliderSpinBox(DoubleSlider* slider, QDoubleSpinBox* spinBox) : m_slider(slider), m_spinBox(spinBox) {
+        connect(m_slider, &DoubleSlider::valueChanged, [this](double v) {
+            setValue(v);
+        });
+        connect(m_spinBox, QOverload<double>::of(&QDoubleSpinBox::valueChanged), [this](double v) {
+            setValue(v);
+        });
+    }
+
+    void setValue(double v) {
+        m_value = v;
+        m_slider->blockSignals(true);
+        m_slider->setValue(v);
+        m_slider->blockSignals(false);
+        m_spinBox->blockSignals(true);
+        m_spinBox->setValue(v);
+        m_spinBox->blockSignals(false);
+
+        emit valueChanged(v);
+    }
+
+    void setMinimum(double v) {
+        m_slider->setMinimum(v);
+        m_spinBox->setMinimum(v);
+    }
+
+    void setMaximum(double v) {
+        m_slider->setMaximum(v);
+        m_spinBox->setMaximum(v);
+    }
+
+    double value() const {
+        return m_value;
+    }
+
+signals:
+    void valueChanged(double newValue);
+};
 
 class BezierSimplificationDemo : public QMainWindow {
 	Q_OBJECT
@@ -51,10 +104,10 @@ class BezierSimplificationDemo : public QMainWindow {
     TopoSet<Inexact> m_toposet;
     CGAL::Aff_transformation_2<Inexact> m_transform;
     OGRSpatialReference m_spatialRef;
-    DoubleSlider* m_minDist;
-    DoubleSlider* m_minAdjDist;
-    DoubleSlider* m_minComponentLength;
-    MinimumDistanceForcer<typename ApproximatedGraph::Vertex_data, typename ApproximatedGraph::Edge_data> m_forcer;
+    std::unique_ptr<DoubleSliderSpinBox> m_minDist;
+    std::unique_ptr<DoubleSliderSpinBox> m_minAdjDist;
+    std::unique_ptr<DoubleSliderSpinBox> m_minComponentLength;
+    Forcer m_forcer;
     ApproximatedGraph m_approxGraph;
     QTabWidget* m_tabs;
     QCheckBox* m_editControlPoints;
@@ -116,6 +169,7 @@ class BezierSimplificationDemo : public QMainWindow {
     void addPaintings();
     void updateComplexityInfo();
     void resetEdits();
+    double getScale() const;
 
   public:
 	BezierSimplificationDemo();
