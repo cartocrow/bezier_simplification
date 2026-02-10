@@ -659,8 +659,8 @@ class MinimumDistanceForcer {
         recomputeAuxiliary();
     }
 
-    void step() {
-        if (m_withinDistEdgeComponents.empty()) return;
+    bool step() {
+        if (m_withinDistEdgeComponents.empty()) return false;
 
         // Iterate over all m_withinDistEdges.
         // Apply a force to the defining sites, its strength proportional to the length of the edge.
@@ -723,6 +723,8 @@ class MinimumDistanceForcer {
 
         recomputeDelaunay();
         recomputeAuxiliary();
+
+        return true;
     }
 };
 
