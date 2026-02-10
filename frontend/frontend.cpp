@@ -674,6 +674,15 @@ void BezierSimplificationDemo::addMinimumDistanceTab() {
     m_forcer.m_ignoreBbox = ignoreBbox->isChecked();
     vLayout->addWidget(ignoreBbox);
 
+    auto* minAngleLabel = new QLabel("Minimum angle between adjacent sites");
+    vLayout->addWidget(minAngleLabel);
+    m_minAngle = new DoubleSlider(Qt::Horizontal);
+    m_minAngle->setMinimum(0);
+    m_minAngle->setMaximum(std::numbers::pi);
+    m_minAngle->setValue(1);
+    m_forcer.m_minAngle = m_minAngle->value();
+    vLayout->addWidget(m_minAngle);
+
     auto* minAdjDistLabel = new QLabel("Minimum adjacency distance");
     vLayout->addWidget(minAdjDistLabel);
     auto* minAdjDist = new DoubleSlider(Qt::Horizontal);
@@ -749,6 +758,13 @@ void BezierSimplificationDemo::addMinimumDistanceTab() {
 
     connect(&*m_minDist, &DoubleSliderSpinBox::valueChanged, [this](double v) {
         m_forcer.m_requiredMinDist = v / getScale();
+        m_forcer.recomputeAuxiliary();
+        repaintVoronoi();
+        m_renderer->repaint();
+    });
+
+    connect(m_minAngle, &DoubleSlider::valueChanged, [this](double v) {
+        m_forcer.m_minAngle = v;
         m_forcer.recomputeAuxiliary();
         repaintVoronoi();
         m_renderer->repaint();

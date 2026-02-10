@@ -562,6 +562,7 @@ class MinimumDistanceForcer {
     double m_requiredMinDist = 0;
     double m_requiredLength = 0;
     double m_minAdjDist;
+    double m_minAngle;
     bool m_ignoreBbox = false;
     StraightGraph& m_g;
     Box m_bbox;
@@ -591,8 +592,39 @@ class MinimumDistanceForcer {
         }
     }
 
+    bool angleSmallerThan(const typename SDG::Vertex::Storage_site_2& p, const typename SDG::Vertex::Storage_site_2& q, double maxAngle) {
+        if (p.is_point() && q.is_point()) {
+            return false;
+        }
+
+        auto getVector = [this](const typename SDG::Vertex::Storage_site_2& site) {
+            auto siteF = defining_graph_feature(site);
+            if (site.is_segment()) {
+                return std::get<typename StraightGraph::Edge_handle>(siteF)->curve().to_vector();
+            } else {
+                auto vh = std::get<typename StraightGraph::Vertex_handle>(siteF);
+                if (vh->degree() != 2) {
+                    return Vector<Inexact>(0, 0);
+                }
+                auto prev = vh->prev();
+                auto next = vh->next();
+                auto prevV = prev->point() - vh->point();
+                auto nextV = next->point() - vh->point();
+                prevV /= sqrt(prevV.squared_length());
+                nextV /= sqrt(nextV.squared_length());
+                return (prevV + nextV).perpendicular(CGAL::CLOCKWISE);
+            }
+        };
+
+        auto pv = getVector(p);
+        auto qv = getVector(q);
+        if (pv == Vector<Inexact>(0, 0) || qv == Vector<Inexact>(0, 0)) return true;
+
+        return std::min(smallestAngleBetween(pv, qv),
+                        smallestAngleBetween(pv, -qv)) < maxAngle;
+    }
+
     bool filterVoronoiEdge(const typename SDG::Edge& e) {
-//        return false;
         auto v1 = e.first->vertex(SDG::cw(e.second));
         auto v2 = e.first->vertex(SDG::ccw(e.second));
         if (!v1->storage_site().is_defined() || !v2->storage_site().is_defined()) return true;
@@ -612,7 +644,7 @@ class MinimumDistanceForcer {
         };
         if (m_ignoreBbox && (connectsToBbox(p) || connectsToBbox(q))) return true;
         auto [ps, qs] = defining_storage_sites(e);
-        if (withinDistanceAlongIsoline(ps, qs, m_minAdjDist)) return true;
+        if (withinDistanceAlongIsoline(ps, qs, m_minAdjDist) && angleSmallerThan(ps, qs, m_minAngle)) return true;
         return false;
     }
 

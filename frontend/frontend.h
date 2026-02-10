@@ -108,6 +108,7 @@ class BezierSimplificationDemo : public QMainWindow {
     std::unique_ptr<DoubleSliderSpinBox> m_minAdjDist;
     std::unique_ptr<DoubleSliderSpinBox> m_minComponentLength;
     Forcer m_forcer;
+    DoubleSlider* m_minAngle;
     ApproximatedGraph m_approxGraph;
     QTabWidget* m_tabs;
     QCheckBox* m_editControlPoints;
