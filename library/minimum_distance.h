@@ -448,7 +448,7 @@ class MinimumDistanceForcer {
     using GraphFeature = std::variant<typename StraightGraph::Vertex_handle, typename StraightGraph::Edge_handle>;
 
     GraphFeature
-    defining_graph_feature(const typename SDG::Vertex::Storage_site_2& s) {
+    static defining_graph_feature(const typename SDG::Vertex::Storage_site_2& s) {
         auto edge = *s.info();
 
         if (s.is_segment()) {
@@ -563,6 +563,7 @@ class MinimumDistanceForcer {
     double m_requiredLength = 0;
     double m_minAdjDist;
     double m_minAngle;
+    double m_maxMagnitude = 5;
     bool m_ignoreBbox = false;
     StraightGraph& m_g;
     Box m_bbox;
@@ -589,6 +590,35 @@ class MinimumDistanceForcer {
             typename SDG::Site_2 site = Gt::Site_2::construct_site_2(seg.source(), seg.target());
             SiteInfo info = eit;
             m_delaunay.insert(site, info);
+        }
+    }
+
+    // Compute a vector of minimum length from one feature to the other
+    static Vector<Inexact> minimumDistanceVector(const typename SDG::Vertex::Site_2& p, const typename SDG::Vertex::Site_2& q) {
+        if (p.is_point()) {
+            if (q.is_point()) {
+                return q.point() - p.point();
+            } else {
+                auto qS = q.segment();
+                return projection(qS, p.point()) - p.point();
+            }
+        }
+        else {
+            auto pS = p.segment();
+            if (q.is_point()) {
+                return q.point() - projection(pS, q.point());
+            }
+            else {
+                auto qS = q.segment();
+                auto projS = projection(qS, pS.source());
+                auto projT = projection(qS, pS.target());
+                if (CGAL::squared_distance(projS, pS.source()) < CGAL::squared_distance(projT, pS.target())) {
+                    return projS - pS.source();
+                }
+                else {
+                    return projT - pS.target();
+                }
+            }
         }
     }
 
@@ -620,8 +650,12 @@ class MinimumDistanceForcer {
         auto qv = getVector(q);
         if (pv == Vector<Inexact>(0, 0) || qv == Vector<Inexact>(0, 0)) return true;
 
-        return std::min(smallestAngleBetween(pv, qv),
-                        smallestAngleBetween(pv, -qv)) < maxAngle;
+        auto v = minimumDistanceVector(p.site(), q.site());
+
+        return std::min(std::min(smallestAngleBetween(pv, v),
+                        smallestAngleBetween(qv, v)),
+                        std::min(smallestAngleBetween(pv, -v),
+                        smallestAngleBetween(qv, -v))) < maxAngle;
     }
 
     bool filterVoronoiEdge(const typename SDG::Edge& e) {
@@ -742,14 +776,18 @@ class MinimumDistanceForcer {
                 auto [pf, qf] = defining_graph_features(dEdge);
 
                 auto repeller = minDist(m_delaunay, dEdge).second;
-                auto magnitude = length(vEdge) * 0.1;
+                auto magnitude = length(vEdge) * 0.1 + 0.01;
 
                 repel(pf, repeller, magnitude);
                 repel(qf, repeller, magnitude);
             }
         }
 
-        for (const auto& [vh, force] : forces) {
+        for (auto& [vh, force] : forces) {
+            if (force.squared_length() > m_maxMagnitude * m_maxMagnitude) {
+                force /= sqrt(force.squared_length());
+                force *= m_maxMagnitude;
+            }
             applyForce(vh, force);
         }
 
@@ -759,10 +797,4 @@ class MinimumDistanceForcer {
         return true;
     }
 };
-
-/// Modifies the given straight graph such that its edges have a minimum distance from each other
-template <class VD, class ED>
-void forceDirectedMinimumDistance(Straight_graph_2<VD, ED, Inexact>& g, double minDist) {
-
-}
 }
