@@ -135,10 +135,12 @@ BezierGraph reconstructBezierGraph(const ApproximatedBezierGraph<BezierGraph>& s
 
                 const CubicBezierCurve& ogCurve = ogEdge->curve();
                 if (!changed) {
-                    bg.add_edge(vmap[&*vit], otherVertex, ogCurve);
+                    auto eh = bg.add_edge(vmap[&*vit], otherVertex, ogCurve);
+                    eh->data() = ogEdge->data();
                 } else {
                     if (points.size() == 2) {
-                        bg.add_edge(vmap[&*vit], otherVertex, CubicBezierCurve(points[0], points[1]));
+                        auto eh = bg.add_edge(vmap[&*vit], otherVertex, CubicBezierCurve(points[0], points[1]));
+                        eh->data() = ogEdge->data();
                         continue;
                     }
                     auto spline = fitSpline(points, maxSquaredError, ogCurve.tangent(0), -ogCurve.tangent(1), 500);
@@ -147,7 +149,8 @@ BezierGraph reconstructBezierGraph(const ApproximatedBezierGraph<BezierGraph>& s
                     for (int i = 0; i < spline.numCurves(); ++i) {
                         auto c = spline.curve(i);
                         auto nextVertex = i == spline.numCurves() - 1 ? otherVertex : bg.insert_vertex(c.target());
-                        bg.add_edge(lastVertex, nextVertex, c);
+                        auto eh = bg.add_edge(lastVertex, nextVertex, c);
+                        eh->data() = ogEdge->data();
                         lastVertex = nextVertex;
                     }
                 }

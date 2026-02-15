@@ -82,7 +82,15 @@ void saveGraphIntoTopoSet(const BaseGraph& graph, TopoSet<Inexact>& topoSet) {
     }
 }
 
+bool liesOnBbox(const Point<Inexact>& p, const Box& bbox) {
+    return abs(p.x() - bbox.xmin()) < M_EPSILON ||
+        abs(p.x() - bbox.xmax()) < M_EPSILON ||
+        abs(p.y() - bbox.ymin()) < M_EPSILON ||
+        abs(p.y() - bbox.ymax()) < M_EPSILON;
+}
+
 void BezierSimplificationDemo::loadInput(const std::filesystem::path& path) {
+    baseModified(false);
     double prevScale = getScale();
 
     m_baseGraph.clear();
@@ -130,6 +138,9 @@ void BezierSimplificationDemo::loadInput(const std::filesystem::path& path) {
 
         m_transform = fitInto(bbox, Rectangle<Inexact>(0, 0, 1000, 1000));
 
+        auto rectT = Rectangle<Inexact>(bbox).transform(m_transform);
+        auto bboxT = Box(rectT.xmin(), rectT.ymin(), rectT.xmax(), rectT.ymax());
+
         for (int i = 0; i < m_toposet.arcs.size(); ++i) {
             auto& arc = m_toposet.arcs[i];
             for (auto eit = arc.edges_begin(); eit != arc.edges_end(); ++eit) {
@@ -150,9 +161,12 @@ void BezierSimplificationDemo::loadInput(const std::filesystem::path& path) {
                         break;
                     }
                 }
+
                 if (!oppositeExists && !alreadyExists) {
                     auto eh = m_baseGraph.add_edge(sourceV, targetV, curve);
                     eh->data().index = i;
+                    bool edgeOnBbox = m_ignoreBbox->isChecked() && liesOnBbox(sourceV->point(), bboxT) && liesOnBbox(targetV->point(), bboxT);
+                    eh->data().collapse_allowed = !edgeOnBbox;
                 }
             }
         }
@@ -171,8 +185,8 @@ void BezierSimplificationDemo::loadInput(const std::filesystem::path& path) {
     m_complexitySliders->setMinimum(m_graph.number_of_edges());
     m_complexitySliders->setValue(m_graph.number_of_edges());
 
-    desiredComplexity->setMinimum(1);
-    desiredComplexity->setMaximum(m_graph.number_of_edges());
+    m_desiredComplexity->setMinimum(1);
+    m_desiredComplexity->setMaximum(m_graph.number_of_edges());
     m_minDist->setMaximum(getScale() * 30);
     m_minAdjDist->setMaximum(getScale() * 30);
     m_minComponentLength->setMaximum(getScale() * 100);
@@ -275,6 +289,10 @@ void BezierSimplificationDemo::updateComplexityInfo() {
     m_backup.clear();
 }
 
+void BezierSimplificationDemo::baseModified(bool modified) {
+    m_tabs->setTabEnabled(1, !modified);
+}
+
 void BezierSimplificationDemo::addIOTab() {
     auto* ioSettings = new QWidget();
     m_tabs->addTab(ioSettings, "IO");
@@ -291,6 +309,9 @@ void BezierSimplificationDemo::addIOTab() {
 
     auto* clearReferenceDataButton = new QPushButton("Clear reference data");
     vLayout->addWidget(clearReferenceDataButton);
+
+    auto* checkIntersectionsButton = new QPushButton("Check intersections");
+    vLayout->addWidget(checkIntersectionsButton);
 
     auto* exportButton = new QPushButton("Export");
     vLayout->addWidget(exportButton);
@@ -343,6 +364,10 @@ void BezierSimplificationDemo::addIOTab() {
         m_referencePolygon = pgns[0].bbox();
     });
 
+    connect(checkIntersectionsButton, &QPushButton::clicked, [this]() {
+        checkIntersections();
+    });
+
     connect(exportButton, &QPushButton::clicked, [this, stackPolygons]() {
         QString startDir = ".";
         std::filesystem::path filePath = QFileDialog::getSaveFileName(this, tr("Select isolines"), startDir).toStdString();
@@ -375,6 +400,8 @@ void BezierSimplificationDemo::addIOTab() {
     });
 
     connect(m_renderer, &GeometryWidget::dragStarted, [this](const Point<Inexact>& p) {
+        if (!m_editControlPoints->isChecked()) return;
+
         m_dragging = nullptr;
 
         std::optional<std::shared_ptr<ControlPoint>> closest;
@@ -396,8 +423,11 @@ void BezierSimplificationDemo::addIOTab() {
     });
 
     connect(m_renderer, &GeometryWidget::dragMoved, [this, editAlignTangents](const Point<Inexact>& px) {
+        if (!m_editControlPoints->isChecked()) return;
+
         auto p = px.transform(m_transform);
         if (m_dragging != nullptr) {
+            baseModified(true);
             m_dragging->point = p;
             if (auto vhP = std::get_if<Vertex_handle>(&m_dragging->type)) {
                 auto vh = *vhP;
@@ -480,12 +510,15 @@ void BezierSimplificationDemo::addIOTab() {
     });
 
     connect(m_renderer, &GeometryWidget::dragEnded, [this](const Point<Inexact>& p) {
+        if (!m_editControlPoints->isChecked()) return;
+
         m_dragging = nullptr;
         m_renderer->repaint();
     });
 }
 
 void BezierSimplificationDemo::resetEdits() {
+    baseModified(false);
     m_editControlPoints->setChecked(false);
 
     if (m_backup.number_of_vertices() > 0) {
@@ -498,6 +531,10 @@ void BezierSimplificationDemo::addSimplificationTab() {
     m_tabs->addTab(simplificationSettings, "Simplification");
     auto* vLayout = new QVBoxLayout(simplificationSettings);
     vLayout->setAlignment(Qt::AlignTop);
+
+    m_ignoreBbox = new QCheckBox("Ignore bounding box");
+    m_ignoreBbox->setChecked(true);
+    vLayout->addWidget(m_ignoreBbox);
 
     auto* initializeButton = new QPushButton("Initialize");
     vLayout->addWidget(initializeButton);
@@ -513,8 +550,8 @@ void BezierSimplificationDemo::addSimplificationTab() {
 
     auto* runToComplexityButton = new QPushButton("Run to specified complexity");
     vLayout->addWidget(runToComplexityButton);
-    desiredComplexity = new QSpinBox();
-    vLayout->addWidget(desiredComplexity);
+    m_desiredComplexity = new QSpinBox();
+    vLayout->addWidget(m_desiredComplexity);
 
     auto* undoButton = new QPushButton("Undo");
     vLayout->addWidget(undoButton);
@@ -546,9 +583,9 @@ void BezierSimplificationDemo::addSimplificationTab() {
         m_backup.clear();
     });
 
-    desiredComplexity->setMinimum(1);
-    desiredComplexity->setMaximum(m_graph.number_of_edges());
-    desiredComplexity->setValue(1);
+    m_desiredComplexity->setMinimum(1);
+    m_desiredComplexity->setMaximum(m_graph.number_of_edges());
+    m_desiredComplexity->setValue(1);
 
     connect(initializeButton, &QPushButton::clicked, [this]() {
         m_collapse.initialize();
@@ -623,11 +660,11 @@ void BezierSimplificationDemo::addSimplificationTab() {
 
     connect(runToComplexityButton, &QPushButton::clicked, [this]() {
         auto startComplexity = m_graph.number_of_edges();
-        auto targetComplexity = desiredComplexity->value();
+        auto targetComplexity = m_desiredComplexity->value();
         QProgressDialog progress("Simplifying...", "Abort", 0, startComplexity - targetComplexity, this);
         progress.setWindowModality(Qt::WindowModal);
         progress.setMinimumDuration(1000);
-        m_collapse.runToComplexity(desiredComplexity->value(), [&progress, startComplexity, this](int i) {
+        m_collapse.runToComplexity(m_desiredComplexity->value(), [&progress, startComplexity, this](int i) {
                                        progress.setValue(startComplexity - i);
                                        if (i % 100 == 0)
                                            m_renderer->repaint();
@@ -804,30 +841,30 @@ void BezierSimplificationDemo::addDrawingTab() {
     auto* vLayout = new QVBoxLayout(drawSettings);
     vLayout->setAlignment(Qt::AlignTop);
 
-    showEdgeDirection = new QCheckBox("Show edge direction");
-    vLayout->addWidget(showEdgeDirection);
-    showOldVertices = new QCheckBox("Show old vertices");
-    vLayout->addWidget(showOldVertices);
-    showNewVertices = new QCheckBox("Show new vertices");
-    vLayout->addWidget(showNewVertices);
-    showNewControlPoints = new QCheckBox("Show new control points");
-    vLayout->addWidget(showNewControlPoints);
-    showDebugInfo = new QCheckBox("Show debug info");
-    vLayout->addWidget(showDebugInfo);
+    m_showEdgeDirection = new QCheckBox("Show edge direction");
+    vLayout->addWidget(m_showEdgeDirection);
+    m_showOldVertices = new QCheckBox("Show old vertices");
+    vLayout->addWidget(m_showOldVertices);
+    m_showNewVertices = new QCheckBox("Show new vertices");
+    vLayout->addWidget(m_showNewVertices);
+    m_showNewControlPoints = new QCheckBox("Show new control points");
+    vLayout->addWidget(m_showNewControlPoints);
+    m_showDebugInfo = new QCheckBox("Show debug info");
+    vLayout->addWidget(m_showDebugInfo);
 
-    connect(showEdgeDirection, &QCheckBox::stateChanged, [this]() {
+    connect(m_showEdgeDirection, &QCheckBox::stateChanged, [this]() {
         m_renderer->repaint();
     });
-    connect(showOldVertices, &QCheckBox::stateChanged, [this]() {
+    connect(m_showOldVertices, &QCheckBox::stateChanged, [this]() {
         m_renderer->repaint();
     });
-    connect(showNewVertices, &QCheckBox::stateChanged, [this]() {
+    connect(m_showNewVertices, &QCheckBox::stateChanged, [this]() {
         m_renderer->repaint();
     });
-    connect(showNewControlPoints, &QCheckBox::stateChanged, [this]() {
+    connect(m_showNewControlPoints, &QCheckBox::stateChanged, [this]() {
         m_renderer->repaint();
     });
-    connect(showDebugInfo, &QCheckBox::stateChanged, [this]() {
+    connect(m_showDebugInfo, &QCheckBox::stateChanged, [this]() {
         m_renderer->repaint();
     });
 }
@@ -866,7 +903,7 @@ void BezierSimplificationDemo::addPaintings() {
         for (auto eit = m_original.edges_begin(); eit != m_original.edges_end(); ++eit) {
             renderer.draw(eit->curve().transform(m_transform.inverse()));
         }
-        if (showOldVertices->isChecked()) {
+        if (m_showOldVertices->isChecked()) {
             for (auto vit = m_original.vertices_begin(); vit != m_original.vertices_end(); ++vit) {
                 renderer.draw(vit->point().transform(m_transform.inverse()));
             }
@@ -884,20 +921,20 @@ void BezierSimplificationDemo::addPaintings() {
         renderer.setMode(GeometryRenderer::stroke);
         renderer.setStroke(Color(0, 0, 0), 2.0);
         for (auto eit = m_baseGraph.edges_begin(); eit != m_baseGraph.edges_end(); ++eit) {
-            if (showDebugInfo->isChecked() && eit->data().collapse.has_value()) {
+            if (m_showDebugInfo->isChecked() && eit->data().collapse.has_value()) {
                 renderer.setStroke(Color(50, 200, 50), 2.0);
             } else {
                 renderer.setStroke(Color(0, 0, 0), 2.0);
             }
             renderer.draw(eit->curve().transform(inv));
-            if (showEdgeDirection->isChecked()) {
+            if (m_showEdgeDirection->isChecked()) {
                 renderer.setStroke(Color(0, 0, 0), 6.0);
                 renderer.draw(eit->curve().split(0.25).first.transform(inv));
             }
         }
         // Control polylines
         for (auto eit = m_baseGraph.edges_begin(); eit != m_baseGraph.edges_end(); ++eit) {
-            if (showNewControlPoints->isChecked()) {
+            if (m_showNewControlPoints->isChecked()) {
                 renderer.setStroke(Color(0, 255, 0), 1.0);
                 Polyline<Inexact> pl;
                 for (int c = 0; c < 4; ++c) pl.push_back(eit->curve().control(c));
@@ -906,7 +943,7 @@ void BezierSimplificationDemo::addPaintings() {
         }
         // Control points
         for (auto eit = m_baseGraph.edges_begin(); eit != m_baseGraph.edges_end(); ++eit) {
-            if (showNewControlPoints->isChecked()) {
+            if (m_showNewControlPoints->isChecked()) {
                 renderer.setStroke(Color(0, 0, 255), 2.0);
                 renderer.draw(eit->curve().sourceControl().transform(inv));
                 renderer.draw(eit->curve().targetControl().transform(inv));
@@ -915,7 +952,7 @@ void BezierSimplificationDemo::addPaintings() {
                 renderer.draw(eit->curve().target().transform(inv));
             }
         }
-        if (showNewVertices->isChecked()) {
+        if (m_showNewVertices->isChecked()) {
             for (auto vit = m_baseGraph.vertices_begin(); vit != m_baseGraph.vertices_end(); ++vit) {
                 renderer.draw(vit->point().transform(inv));
             }
@@ -1005,6 +1042,10 @@ void BezierSimplificationDemo::addPaintings() {
             }
         }
     }, "Control points");
+
+    m_renderer->addPainting([this](GeometryRenderer& renderer) {
+        m_intersectionsPainting.paint(renderer);
+    }, "Intersections");
 }
 
 BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_collapse(m_graph, Traits()), m_forcer(m_approxGraph, 1.0) {
@@ -1049,6 +1090,40 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
     });
 
     addPaintings();
+}
+
+void BezierSimplificationDemo::checkIntersections() {
+    Rectangle<Exact> rect(0, 0, 1000, 1000);
+    BezierCurveQuadTree<Edge_handle, Exact> bcqt(rect, 10, 0.05, [](Edge_handle e) { return e->curve(); });
+
+    m_intersectionsPainting = {};
+    GeometryRenderer& r = m_intersectionsPainting;
+    r.setMode(GeometryRenderer::stroke);
+    r.setStroke(Color(255, 0, 0), 2.0);
+    
+    for (auto eit = m_baseGraph.edges_begin(); eit != m_baseGraph.edges_end(); ++eit) {
+        if (eit->curve().selfIntersects()) {
+            std::cout << "Found self-intersection!" << std::endl;
+            r.draw(eit->curve());
+        }
+        bcqt.insert(eit);
+    }
+
+    for (auto eit = m_baseGraph.edges_begin(); eit != m_baseGraph.edges_end(); ++eit) {
+        auto box = eit->curve().bbox();
+        Rectangle<Exact> rect(box.xmin(), box.ymin(), box.xmax(), box.ymax());
+        bcqt.findOverlapped(rect, [&](const BaseGraph::Edge_handle& other) {
+            if (other == eit) return false;
+
+            if (other->curve().sub(0.01, 0.99).intersects(eit->curve())) {
+                std::cout << "Found intersection!" << std::endl;
+                r.draw(eit->curve());
+                r.draw(other->curve());
+                return true;
+            }
+            return false;
+            });
+    }
 }
 
 int main(int argc, char* argv[]) {

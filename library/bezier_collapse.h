@@ -72,6 +72,7 @@ struct HECIData : ECBase<typename BezierCollapseGraphWithHistoryAndIndex::Edge_h
     std::shared_ptr<Operation<HECIGraph>> hist;
     std::shared_ptr<Operation<HECIGraph>> futr;
     int index;
+    bool collapse_allowed = true;
 };
 }
 using BezierCollapseGraph = detail::BezierCollapseGraph;
@@ -91,6 +92,10 @@ class BezierCollapse {
 
   private:
 	void update(Edge_handle e) {
+        if constexpr (std::is_same_v<BG, BezierCollapseGraphWithHistoryAndIndex>) {
+            if (!e->data().collapse_allowed) return;
+        }
+
         auto& edata = e->data();
 
         // clear topology
@@ -135,7 +140,11 @@ class BezierCollapse {
 #ifndef __EMSCRIPTEN__
             futures.emplace_back(std::async(std::launch::async, [eit, this]() {
 #endif
-                m_traits.determineCollapse(eit);
+                if constexpr (std::is_same_v<BG, BezierCollapseGraphWithHistoryAndIndex>) {
+                    if (eit->data().collapse_allowed) {
+                        m_traits.determineCollapse(eit);
+                    }
+                }
 #ifndef __EMSCRIPTEN__
             }));
 #endif
@@ -145,7 +154,11 @@ class BezierCollapse {
         for (auto& f : futures) f.get();
 #endif
         for (auto eit = m_g.edges_begin(); eit != m_g.edges_end(); ++eit) {
-            m_q.push(eit);
+            if constexpr (std::is_same_v<BG, BezierCollapseGraphWithHistoryAndIndex>) {
+                if (eit->data().collapse_allowed) {
+                    m_q.push(eit);
+                }
+            }
         }
 	}
 

@@ -92,68 +92,73 @@ signals:
 class ComplexitySliders : public QObject {
     Q_OBJECT
 private:
-    QLabel* complexityLabel;
-    QSlider* complexity;
-    DoubleSlider* complexityLog;
+    QLabel* m_complexityLabel;
+    QSlider* m_complexity;
+    DoubleSlider* m_complexityLog;
     
     int m_value;
 
 public:
     ComplexitySliders(QLayout* layout) {
-        complexityLabel = new QLabel("#Edges: ");
-        complexity = new QSlider();
-        complexityLog = new DoubleSlider();
+        m_complexityLabel = new QLabel("#Edges: ");
+        m_complexity = new QSlider();
+        m_complexityLog = new DoubleSlider();
 
-        complexity->setOrientation(Qt::Horizontal);
-        layout->addWidget(complexityLabel);
-        layout->addWidget(complexity);
-        complexityLog->setOrientation(Qt::Horizontal);
-        complexityLog->setPrecision(1000);
-        layout->addWidget(complexityLog);
+        m_complexity->setOrientation(Qt::Horizontal);
+        layout->addWidget(m_complexityLabel);
+        layout->addWidget(m_complexity);
+        m_complexityLog->setOrientation(Qt::Horizontal);
+        m_complexityLog->setPrecision(1000);
+        layout->addWidget(m_complexityLog);
 
-        connect(complexity, &QSlider::valueChanged, [this](int value) {
+        connect(m_complexity, &QSlider::valueChanged, [this](int value) {
             setValue(value);
         });
 
-        connect(complexityLog, &DoubleSlider::valueChanged, [this](double value) {
+        connect(m_complexityLog, &DoubleSlider::valueChanged, [this](double value) {
             setValue(std::exp(value));
         });
     }
 
     void setValue(int v) {
         m_value = v;
-        complexity->blockSignals(true);
-        complexity->setValue(v);
-        complexity->blockSignals(false);
-        complexityLog->blockSignals(true);
-        complexityLog->setValue(log(v));
-        complexityLog->blockSignals(false);
+        m_complexity->blockSignals(true);
+        m_complexity->setValue(v);
+        m_complexity->blockSignals(false);
+        m_complexityLog->blockSignals(true);
+        m_complexityLog->setValue(log(v));
+        m_complexityLog->blockSignals(false);
 
-        complexityLabel->setText(QString::fromStdString("#Edges: " + std::to_string(v)));
+        m_complexityLabel->setText(QString::fromStdString("#Edges: " + std::to_string(v)));
 
         emit valueChanged(v);
     }
 
     void setMinimum(double v) {
-        complexity->setMinimum(v);
-        complexityLog->setMinimum(log(v));
+        m_complexity->setMinimum(v);
+        m_complexityLog->setMinimum(log(v));
     }
 
     void setMaximum(double v) {
-        complexity->setMaximum(v);
-        complexityLog->setMaximum(log(v));
+        m_complexity->setMaximum(v);
+        m_complexityLog->setMaximum(log(v));
     }
 
     int minimum() {
-        return complexity->minimum();
+        return m_complexity->minimum();
     }
 
     int maximum() {
-        return complexity->maximum();
+        return m_complexity->maximum();
     }
 
     int value() const {
         return m_value;
+    }
+
+    void setEnabled(bool enabled) {
+        m_complexity->setEnabled(enabled);
+        m_complexityLog->setEnabled(enabled);
     }
 
 signals:
@@ -184,12 +189,15 @@ class BezierSimplificationDemo : public QMainWindow {
     ApproximatedGraph m_approxGraph;
     QTabWidget* m_tabs;
     QCheckBox* m_editControlPoints;
-    QSpinBox* desiredComplexity;
-    QCheckBox* showEdgeDirection;
-    QCheckBox* showOldVertices;
-    QCheckBox* showNewVertices;
-    QCheckBox* showNewControlPoints;
-    QCheckBox* showDebugInfo;
+    QSpinBox* m_desiredComplexity;
+    QCheckBox* m_showEdgeDirection;
+    QCheckBox* m_showOldVertices;
+    QCheckBox* m_showNewVertices;
+    QCheckBox* m_showNewControlPoints;
+    QCheckBox* m_showDebugInfo;
+    QCheckBox* m_ignoreBbox;
+
+   void baseModified(bool modified);
 
     BaseGraph m_backup;
 
@@ -204,6 +212,7 @@ class BezierSimplificationDemo : public QMainWindow {
     Box m_referencePolygon;
 
     PaintingRenderer m_voronoiPainting;
+    PaintingRenderer m_intersectionsPainting;
 
     std::vector<Color> m_colors = {
         {0xB9E1EE},
@@ -239,6 +248,7 @@ class BezierSimplificationDemo : public QMainWindow {
     void addPaintings();
     void updateComplexityInfo();
     void resetEdits();
+    void checkIntersections();
     double getScale() const;
 
   public:
