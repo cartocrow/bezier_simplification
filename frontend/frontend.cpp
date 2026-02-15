@@ -167,12 +167,10 @@ void BezierSimplificationDemo::loadInput(const std::filesystem::path& path) {
 
     m_renderer->fitInView(transform(bbox, m_transform.inverse()));
 
-    complexity->setMaximum(m_graph.number_of_edges());
-    complexity->setMinimum(m_graph.number_of_edges());
-    complexity->setValue(m_graph.number_of_edges());
-    complexityLog->setMaximum(log(m_graph.number_of_edges() + -1.5));
-    complexityLog->setMinimum(log(m_graph.number_of_edges() + -1.5));
-    complexityLog->setValue(log(m_graph.number_of_edges() + -1.5));
+    m_complexitySliders->setMaximum(m_graph.number_of_edges());
+    m_complexitySliders->setMinimum(m_graph.number_of_edges());
+    m_complexitySliders->setValue(m_graph.number_of_edges());
+
     desiredComplexity->setMinimum(1);
     desiredComplexity->setMaximum(m_graph.number_of_edges());
     m_minDist->setMaximum(getScale() * 30);
@@ -272,12 +270,9 @@ void BezierSimplificationDemo::repaintVoronoi() {
 }
 
 void BezierSimplificationDemo::updateComplexityInfo() {
+    m_complexitySliders->setMinimum(std::min((int)m_graph.number_of_edges(), m_complexitySliders->minimum()));
+    m_complexitySliders->setValue(m_graph.number_of_edges());
     m_backup.clear();
-    complexity->setMinimum(std::min((int) m_graph.number_of_edges(), complexity->minimum()));
-    complexity->setValue(m_graph.number_of_edges());
-    complexityLabel->setText(QString::fromStdString("#Edges: " + std::to_string(m_graph.number_of_edges())));
-    complexityLog->setMinimum(std::min(log(m_graph.number_of_edges() + 0.5), complexityLog->minimum()));
-    complexityLog->setValue(log(m_graph.number_of_edges() + 0.5));
 }
 
 void BezierSimplificationDemo::addIOTab() {
@@ -539,39 +534,21 @@ void BezierSimplificationDemo::addSimplificationTab() {
     auto* redo100Button = new QPushButton("Redo (x100)");
     vLayout->addWidget(redo100Button);
 
-    complexityLabel = new QLabel("#Edges: ");
-    complexity = new QSlider();
-    complexityLog = new DoubleSlider();
-    complexity->setMaximum(m_graph.number_of_edges());
-    complexity->setMinimum(m_graph.number_of_edges());
-    complexity->setValue(m_graph.number_of_edges());
-    complexityLog->setMaximum(log(m_graph.number_of_edges() + 0.5));
-    complexityLog->setMinimum(log(m_graph.number_of_edges() + 0.5));
-    complexityLog->setValue(log(m_graph.number_of_edges() + 0.5));
+    m_complexitySliders = std::make_unique<ComplexitySliders>(vLayout);
+    m_complexitySliders->setMaximum(m_graph.number_of_edges());
+    m_complexitySliders->setMinimum(m_graph.number_of_edges());
+    m_complexitySliders->setValue(m_graph.number_of_edges());
+
+    connect(&*m_complexitySliders, &ComplexitySliders::valueChanged, [this](double v) {
+        resetEdits();
+        m_graph.recallComplexity(v);
+        m_renderer->repaint();
+        m_backup.clear();
+    });
+
     desiredComplexity->setMinimum(1);
     desiredComplexity->setMaximum(m_graph.number_of_edges());
     desiredComplexity->setValue(1);
-
-    complexity->setOrientation(Qt::Horizontal);
-    vLayout->addWidget(complexityLabel);
-    vLayout->addWidget(complexity);
-    complexityLog->setOrientation(Qt::Horizontal);
-    complexityLog->setPrecision(10000);
-    vLayout->addWidget(complexityLog);
-
-    connect(complexity, &QSlider::valueChanged, [this](int value) {
-        resetEdits();
-        m_graph.recallComplexity(value);
-        m_renderer->repaint();
-        updateComplexityInfo();
-    });
-
-    connect(complexityLog, &DoubleSlider::valueChanged, [this](double value) {
-        resetEdits();
-        m_graph.recallComplexity(std::exp(value));
-        m_renderer->repaint();
-        updateComplexityInfo();
-    });
 
     connect(initializeButton, &QPushButton::clicked, [this]() {
         m_collapse.initialize();
@@ -601,7 +578,7 @@ void BezierSimplificationDemo::addSimplificationTab() {
     connect(undoButton, &QPushButton::clicked, [this]() {
         resetEdits();
         m_graph.backInTime();
-        complexity->setValue(m_graph.number_of_edges());
+        m_complexitySliders->setValue(m_graph.number_of_edges());
         m_renderer->repaint();
     });
 
@@ -609,7 +586,7 @@ void BezierSimplificationDemo::addSimplificationTab() {
         resetEdits();
         for (int i = 0; i < 10; ++i)
             m_graph.backInTime();
-        complexity->setValue(m_graph.number_of_edges());
+        m_complexitySliders->setValue(m_graph.number_of_edges());
         m_renderer->repaint();
     });
 
@@ -617,14 +594,14 @@ void BezierSimplificationDemo::addSimplificationTab() {
         resetEdits();
         for (int i = 0; i < 100; ++i)
             m_graph.backInTime();
-        complexity->setValue(m_graph.number_of_edges());
+        m_complexitySliders->setValue(m_graph.number_of_edges());
         m_renderer->repaint();
     });
 
     connect(redoButton, &QPushButton::clicked, [this]() {
         resetEdits();
         m_graph.forwardInTime();
-        complexity->setValue(m_graph.number_of_edges());
+        m_complexitySliders->setValue(m_graph.number_of_edges());
         m_renderer->repaint();
     });
 
@@ -632,7 +609,7 @@ void BezierSimplificationDemo::addSimplificationTab() {
         resetEdits();
         for (int i = 0; i < 10; ++i)
             m_graph.forwardInTime();
-        complexity->setValue(m_graph.number_of_edges());
+        m_complexitySliders->setValue(m_graph.number_of_edges());
         m_renderer->repaint();
     });
 
@@ -640,7 +617,7 @@ void BezierSimplificationDemo::addSimplificationTab() {
         resetEdits();
         for (int i = 0; i < 100; ++i)
             m_graph.forwardInTime();
-        complexity->setValue(m_graph.number_of_edges());
+        m_complexitySliders->setValue(m_graph.number_of_edges());
         m_renderer->repaint();
     });
 

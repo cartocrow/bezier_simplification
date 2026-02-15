@@ -89,6 +89,77 @@ signals:
     void valueChanged(double newValue);
 };
 
+class ComplexitySliders : public QObject {
+    Q_OBJECT
+private:
+    QLabel* complexityLabel;
+    QSlider* complexity;
+    DoubleSlider* complexityLog;
+    
+    int m_value;
+
+public:
+    ComplexitySliders(QLayout* layout) {
+        complexityLabel = new QLabel("#Edges: ");
+        complexity = new QSlider();
+        complexityLog = new DoubleSlider();
+
+        complexity->setOrientation(Qt::Horizontal);
+        layout->addWidget(complexityLabel);
+        layout->addWidget(complexity);
+        complexityLog->setOrientation(Qt::Horizontal);
+        complexityLog->setPrecision(1000);
+        layout->addWidget(complexityLog);
+
+        connect(complexity, &QSlider::valueChanged, [this](int value) {
+            setValue(value);
+        });
+
+        connect(complexityLog, &DoubleSlider::valueChanged, [this](double value) {
+            setValue(std::exp(value));
+        });
+    }
+
+    void setValue(int v) {
+        m_value = v;
+        complexity->blockSignals(true);
+        complexity->setValue(v);
+        complexity->blockSignals(false);
+        complexityLog->blockSignals(true);
+        complexityLog->setValue(log(v));
+        complexityLog->blockSignals(false);
+
+        complexityLabel->setText(QString::fromStdString("#Edges: " + std::to_string(v)));
+
+        emit valueChanged(v);
+    }
+
+    void setMinimum(double v) {
+        complexity->setMinimum(v);
+        complexityLog->setMinimum(log(v));
+    }
+
+    void setMaximum(double v) {
+        complexity->setMaximum(v);
+        complexityLog->setMaximum(log(v));
+    }
+
+    int minimum() {
+        return complexity->minimum();
+    }
+
+    int maximum() {
+        return complexity->maximum();
+    }
+
+    int value() const {
+        return m_value;
+    }
+
+signals:
+    void valueChanged(double newValue);
+};
+
 class BezierSimplificationDemo : public QMainWindow {
 	Q_OBJECT
 
@@ -107,14 +178,12 @@ class BezierSimplificationDemo : public QMainWindow {
     std::unique_ptr<DoubleSliderSpinBox> m_minDist;
     std::unique_ptr<DoubleSliderSpinBox> m_minAdjDist;
     std::unique_ptr<DoubleSliderSpinBox> m_minComponentLength;
+    std::unique_ptr<ComplexitySliders> m_complexitySliders;
     Forcer m_forcer;
     DoubleSlider* m_minAngle;
     ApproximatedGraph m_approxGraph;
     QTabWidget* m_tabs;
     QCheckBox* m_editControlPoints;
-    QLabel* complexityLabel;
-    QSlider* complexity;
-    DoubleSlider* complexityLog;
     QSpinBox* desiredComplexity;
     QCheckBox* showEdgeDirection;
     QCheckBox* showOldVertices;
