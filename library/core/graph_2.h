@@ -248,6 +248,45 @@ class Graph_2 {
 
         return v;
     }
+
+    /// Merge an edge with the one that precedes it and replace them with newCurve.
+    /// Returns the handle of the new edge.
+    /// \pre Source vertex of edge e has degree 2.
+    Edge_handle merge_edge_with_prev(Edge_handle e, Curve_2 newCurve) {
+        assert(e->source()->degree() != 2);
+        Edge_handle prev = e->prev();
+
+        Vertex_handle u = prev->source();
+        Vertex_handle v = e->target();
+
+        // todo: reuse edge/vertex objects and move them
+
+        // Remove old edges and vertices
+        remove_edge(e);
+        remove_edge(prev);
+        remove_vertex(e->source());
+
+        // Add new edge
+        auto eh = add_edge(u, v, newCurve);
+
+        return eh;
+    }
+
+    /// Replace an edge by two edges
+    /// Returns the handle of the newly created vertex.
+    Vertex_handle subdivide_edge(Edge_handle e, Curve_2 toNewPoint, Curve_2 fromNewPoint) {
+        assert(toNewPoint.target() == fromNewPoint.source());
+
+        auto s = e->source();
+        auto t = e->target();
+        remove_edge(e);
+        auto vh = insert_vertex(toNewPoint.target());
+        add_edge(s, vh, toNewPoint);
+        add_edge(vh, t, fromNewPoint);
+
+        return vh;
+    }
+
     /// <summary>
     /// Ensures that all degree-2 vertices v have edge(0) = (u,v) and edge(1) = (v,w).
     /// </summary>

@@ -14,13 +14,25 @@
 
 namespace cartocrow::curved_simplification {
 namespace detail {
-struct Collapse {
-    /// Cost of collapse
-    Number<Inexact> cost;
+/// Collapse the edge, the one that comes before, and the one that comes after
+struct Collapse3 {
     /// The Bézier after collapse that has point as a target
     CubicBezierCurve before;
     /// The Bézier after collapse that has point as a source
     CubicBezierCurve after;
+};
+
+/// Collapse the edge and the one that comes before
+struct Collapse2 {
+    /// The Bézier after collapse
+    CubicBezierCurve replacement;
+};
+
+struct Collapse {
+    /// Cost of collapse
+    Number<Inexact> cost;
+
+    std::variant<Collapse2, Collapse3> result;
 };
 
 template <class BG, class BCT>
@@ -137,32 +149,64 @@ class BezierCollapse {
         }
 	}
 
-    bool blocks(Edge_handle edge, Edge_handle collapse) {
-        Edge_handle prev = collapse->prev();
-        Edge_handle next = collapse->next();
-        const auto& clps = *collapse->data().collapse;
+    std::pair<CubicBezierSpline, CubicBezierSpline>
+    beforeAndAfterCollapse(Edge_handle collapse) {
+        CubicBezierSpline beforeSpline;
+        CubicBezierSpline afterSpline;
+        auto& clps = *collapse->data().collapse;
 
-        if (edge == collapse || edge == prev || edge == next) {
-            // involved in collapse
-            return false;
+        if (auto* clps3P = std::get_if<detail::Collapse3>(&clps.result)) {
+            auto& clps3 = *clps3P;
+            Edge_handle prev = collapse->prev();
+            Edge_handle next = collapse->next();
+
+            beforeSpline.appendCurve(prev->curve());
+            beforeSpline.appendCurve(collapse->curve());
+            beforeSpline.appendCurve(next->curve());
+
+            afterSpline.appendCurve(clps3.before);
+            afterSpline.appendCurve(clps3.after);
+        } else if (auto* clps2P = std::get_if<detail::Collapse2>(&clps.result)) {
+            auto& clps2 = *clps2P;
+
+            Edge_handle prev = collapse->prev();
+
+            beforeSpline.appendCurve(prev->curve());
+            beforeSpline.appendCurve(collapse->curve());
+
+            afterSpline.appendCurve(clps2.replacement);
         }
 
-        int nSegs = 20; // todo make parameter
-        CubicBezierSpline beforeSpline;
-        beforeSpline.appendCurve(prev->curve());
-        beforeSpline.appendCurve(collapse->curve());
-        beforeSpline.appendCurve(next->curve());
+        return {beforeSpline, afterSpline};
+    }
 
-        CubicBezierSpline afterSpline;
-        afterSpline.appendCurve(clps.before);
-        afterSpline.appendCurve(clps.after);
+    bool blocks(Edge_handle edge, Edge_handle collapse) {
+        auto& clps = *collapse->data().collapse;
+        if (std::holds_alternative<detail::Collapse3>(clps.result)) {
+            Edge_handle prev = collapse->prev();
+            Edge_handle next = collapse->next();
+
+            if (edge == collapse || edge == prev || edge == next) {
+                // involved in collapse
+                return false;
+            }
+        } else if (std::holds_alternative<detail::Collapse2>(clps.result)) {
+            Edge_handle prev = collapse->prev();
+
+            if (edge == collapse || edge == prev) {
+                // involved in collapse
+                return false;
+            }
+        }
+
+        auto [beforeSpline, afterSpline] = beforeAndAfterCollapse(collapse);
 
         CubicBezierCurve curve = edge->curve();
         Box curveBox = curve.bbox();
         Box combBox = beforeSpline.bbox() + afterSpline.bbox();
         if (!do_overlap(combBox, curveBox)) return false;
 
-        // Blocks if edge intersects beforeSpline or afterSpline
+        // Blocks if edge intersects afterSpline
         if (curve.sub(0.01, 0.99).intersects(afterSpline, 0.01)) {
             return true;
         }
@@ -174,6 +218,8 @@ class BezierCollapse {
 
         // Because CGAL's Bézier functionality is a bit buggy (https://github.com/CGAL/cgal/issues/9176),
         // we use polyline approximations here for now.
+
+        int nSegs = 20; // todo make parameter
 
         auto beforePl = beforeSpline.polyline(nSegs);
         auto afterPl = afterSpline.polyline(nSegs);
@@ -210,102 +256,142 @@ class BezierCollapse {
         return false;
     }
 
-	bool step() {
-		while (!m_q.empty()) {
-			Edge_handle e = m_q.pop();
-			auto& edata = e->data();
+    std::optional<Edge_handle> findNextStep() {
+        // Note that the queue contains only collapses for which we have not checked yet if its collapse violated topology.
+        while (!m_q.empty()) {
+            Edge_handle e = m_q.pop();
+            auto& edata = e->data();
 
-			if (!edata.collapse.has_value()) continue;
+            if (!edata.collapse.has_value()) continue;
 
-            if (e->source()->degree() != 2 || e->target()->degree() != 2) continue;
+            const auto& clps = edata.collapse->result;
 
-			Edge_handle prev = e->prev();
-			Edge_handle next = e->next();
+            if (std::holds_alternative<detail::Collapse2>(clps)) {
+                if (e->source()->degree() != 2) continue;
+            } else if (std::holds_alternative<detail::Collapse3>(clps)) {
+                if (e->source()->degree() != 2 || e->target()->degree() != 2) continue;
+            }
+
+            Edge_handle prev = e->prev();
+            Edge_handle next = e->next();
+
             if (prev == next) continue;
 
-            const auto& clps = *edata.collapse;
-			const auto& c0 = clps.before;
-			const auto& c1 = clps.after;
-
-            // possibly blocked?
-            Box box = c0.bbox() + c1.bbox();
+            auto [beforeSpline, afterSpline] = beforeAndAfterCollapse(e);
+            Box box = beforeSpline.bbox() + afterSpline.bbox();
             Rectangle<Exact> rect(box.xmin(), box.ymin(), box.xmax(), box.ymax());
 
             edata.blocked_by_degzero = false;
 
-            // todo: degzero vertices
-//            pqt.findContained(rect, [&edata](Vertex& b) {
-//                if (!edata.T1.has_on_unbounded_side(b.getPoint()) ||
-//                    !edata.T2.has_on_unbounded_side(b.getPoint())) {
-//                    // blocked, by an unmovable vertex
-//                    edata.blocked_by_degzero = true;
-//                }
-//            });
+            // Check whether this collapse is blocked
+            m_bcqt->findOverlapped(rect, [this, e](Edge_handle b) {
+                if (blocks(b, e)) {
+                    b->data().blocking.push_back(e);
+                    e->data().blocked_by.push_back(b);
+                    return true;
+                }
+                return false;
+            });
 
-//            if (!edata.blocked_by_degzero) {
+            // If it is blocked, then we do not collapse (keep it removed from the queue).
+            // The edges that block this collapse store a reference to this collapse, so that it can be
+            // added back in the queue once the blocker edge has changed.
+            if (!edata.blocked_by.empty()) continue;
 
-                m_bcqt->findOverlapped(rect, [this, e](Edge_handle b) {
-                    if (blocks(b, e)) {
-                        b->data().blocking.push_back(e);
-                        e->data().blocked_by.push_back(b);
-//                        std::cout << "Edge: " << e->curve().source() << " -> " << e->curve().target()
-//                                  << " is blocked by: " << b->curve().source() << " -> " << b->curve().target() << std::endl;
-                        return true; // Stop the search
-                    }
-                    return false;
-                });
-//            }
+            // The edge is not blocked
+            return e;
+        }
 
-            if (//edata.blocked_by_degzero ||
-                !edata.blocked_by.empty()) continue;
+        return std::nullopt;
+    }
 
-//            std::cout << "Collapsing: " << e->source()->point() << " -> " << e->target()->point() << std::endl;
-//            std::cout << "prev: " << prev->source()->point() << " -> " << prev->target()->point() << std::endl;
-//            std::cout << "next: " << next->source()->point() << " -> " << next->target()->point() << std::endl;
+    void clearBlockInfo(Edge_handle e) {
+        // Add back collapses unblocked by removal of this edge.
+        for (Edge_handle b: e->data().blocking) {
+            if (utils::listRemove(e, b->data().blocked_by)) {
+                if (b->data().blocked_by.empty() && !b->data().blocked_by_degzero) {
+                    m_q.push(b);
+                }
+            }
+        }
+        e->data().blocking.clear();
 
+        // Remove references to this edge in other edges block info.
+        for (Edge_handle b: e->data().blocked_by) {
+            utils::listRemove(e, b->data().blocking);
+        }
+        e->data().blocked_by.clear();
+    }
+
+    void performStep(Edge_handle e) {
+        auto& edata = e->data();
+
+        if (!edata.collapse.has_value()) return;
+
+        const auto& clps = edata.collapse->result;
+
+        if (auto* clps2P = std::get_if<detail::Collapse2>(&clps)) {
+            auto& clps2 = *clps2P;
+            Edge_handle prev = e->prev();
+
+            const auto& newCurve = clps2.replacement;
+
+            // Update queue
+            m_q.remove(prev);
+
+            // Update quadtree
+            m_bcqt->remove(prev);
+            m_bcqt->remove(e);
+
+            // Add back collapses unblocked by removal of this and prev edge, and remove references to them.
+            clearBlockInfo(e);
+            clearBlockInfo(prev);
+
+            // Perform the collapse
+            Edge_handle eh;
+            if constexpr (std::is_same_v<BG, BezierCollapseGraphWithHistoryAndIndex>) {
+                auto index = e->data().index;
+                eh = m_g.merge_edge_with_prev(e, newCurve);
+                eh->data().index = index;
+            } else {
+                eh = m_g.merge_edge_with_prev(e, newCurve);
+            }
+
+            // Update quadtree
+            m_bcqt->insert(eh);
+
+            // Compute new collapses for new edge, and ones whose neighbor is the new edge (then their collapse changes)
+            if (eh->source()->degree() == 2) {
+                update(eh->prev());
+            }
+            update(eh);
+            if (eh->target()->degree() == 2) {
+                update(eh->next());
+            }
+        } else if (auto* clps3P = std::get_if<detail::Collapse3>(&clps)) {
+            auto& clps3 = *clps3P;
+
+            Edge_handle prev = e->prev();
+            Edge_handle next = e->next();
+            const auto& c0 = clps3.before;
+            const auto& c1 = clps3.after;
+
+            // Update queue
             m_q.remove(prev);
             m_q.remove(next);
 
+            // Update quadtree
             m_bcqt->remove(prev);
             m_bcqt->remove(e);
             m_bcqt->remove(next);
 
-            for (Edge_handle b : edata.blocking) {
-//                std::cout << "Going to remove e: " << e->source()->point() << " -> " << e->target()->point() << " from b's blocked_by: " << b->source()->point() << " -> " << b->target()->point() << std::endl;
-                if (utils::listRemove(e, b->data().blocked_by)) {
-                    if (b->data().blocked_by.empty() && !b->data().blocked_by_degzero) {
-                        m_q.push(b);
-                    }
-                }
-            }
-            edata.blocking.clear();
+            // Add back collapses unblocked by removal of this edge, and remove references to this edge.
+            // Do the same for prev and next as they are also removed.
+            clearBlockInfo(e);
+            clearBlockInfo(prev);
+            clearBlockInfo(next);
 
-            for (Edge_handle b : prev->data().blocking) {
-//                std::cout << "Going to remove prev: " << prev->source()->point() << " -> " << prev->target()->point() << " from b's blocked_by: " << b->source()->point() << " -> " << b->target()->point() << std::endl;
-                if (utils::listRemove(prev, b->data().blocked_by)) {
-                    if (b->data().blocked_by.empty() && !b->data().blocked_by_degzero) {
-                        m_q.push(b);
-                    }
-                }
-            }
-            for (Edge_handle b : prev->data().blocked_by) {
-                utils::listRemove(prev, b->data().blocking);
-            }
-            prev->data().blocking.clear();
-
-            for (Edge_handle b : next->data().blocking) {
-//                std::cout << "Going to remove next: " << next->source()->point() << " -> " << next->target()->point() << " from b's blocked_by: " << b->source()->point() << " -> " << b->target()->point() << std::endl;
-                if (utils::listRemove(next, b->data().blocked_by)) {
-                    if (b->data().blocked_by.empty() && !b->data().blocked_by_degzero) {
-                        m_q.push(b);
-                    }
-                }
-            }
-            for (Edge_handle b : next->data().blocked_by) {
-                utils::listRemove(next, b->data().blocking);
-            }
-            next->data().blocking.clear();
-
+            // Perform the collapse
             Edge_handle eh1;
             Edge_handle eh2;
             if constexpr (std::is_same_v<BG, BezierCollapseGraphWithHistoryAndIndex>) {
@@ -321,32 +407,34 @@ class BezierCollapse {
                 eh2 = v->outgoing();
             }
 
+            // Update quadtree
             m_bcqt->insert(eh1);
             m_bcqt->insert(eh2);
 
+            // Compute new collapses for new edges
             if (eh1->source()->degree() == 2) {
-				update(eh1->prev());
-			}
-			update(eh1);
-			update(eh2);
-			if (eh2->target()->degree() == 2) {
-				update(eh2->next());
-			}
+                update(eh1->prev());
+            }
+            update(eh1);
+            update(eh2);
+            if (eh2->target()->degree() == 2) {
+                update(eh2->next());
+            }
+        } else {
+            throw std::runtime_error("Unknown collapse");
+        }
+    }
 
-//            for (auto eit = m_g.edges_begin(); eit != m_g.edges_end(); ++eit) {
-//                auto& edata = eit->data();
-//                for (auto eh : edata.blocking) {
-//                    std::cout << "eit " << eit->source()->point() << " -> " << eit->target()->point() << " is blocking " << eh->source()->point() << " -> " << eh->target()->point() << std::endl;
-//                }
-//                for (auto eh : edata.blocked_by) {
-//                    std::cout << "eit " << eit->source()->point() << " -> " << eit->target()->point() << " is blocked by " << eh->source()->point() << " -> " << eh->target()->point() << std::endl;
-//                }
-//            }
+	bool step() {
+        auto eh = findNextStep();
+        if (!eh.has_value()) {
+            return false;
+        }
 
-			return true;
-		}
-		return false;
+        performStep(*eh);
+        return true;
 	}
+
 	bool runToComplexity(int k, std::optional<std::function<void(int)>> progress = std::nullopt,
                          std::optional<std::function<bool()>> cancelled = std::nullopt) {
 		while (m_g.number_of_edges() > k) {

@@ -6,7 +6,7 @@
 
 #include <cartocrow/core/arrangement_helpers.h>
 
-#define DEBUG 0
+#define DEBUG 1
 
 #if DEBUG
 #include <cartocrow/renderer/ipe_renderer.h>
@@ -23,6 +23,7 @@ bool isStraight(const CubicBezierCurve& curve);
 // Whether curve c1 connects smoothly to curve c2: whether the end tangent of c1 aligns approximately with the
 // start tangents of c2
 bool connectsSmoothlyTo(const CubicBezierCurve& c1, const CubicBezierCurve& c2);
+bool isSmooth(const CubicBezierSpline& spline);
 
 template <typename BG> struct StevenBCTraits {
 	int tSteps;
@@ -37,11 +38,71 @@ template <typename BG> struct StevenBCTraits {
 	      tSteps(tSteps), nSegs(nSegs), symDiffSegs(symDiffSegs), debug(debug) {};
 
 private:
+    /// Returns a single cubic Bézier curve that approximates beforeSpline, and has the same end tangents.
+    /// The curve has the given signed area.
+    std::optional<CubicBezierCurve>
+    closeFitSub(const CubicBezierSpline& beforeSpline, double area) {
+        auto p0 = beforeSpline.source();
+        auto p3 = beforeSpline.target();
+
+        auto beforePl = beforeSpline.polyline(nSegs);
+        if (abs(area) < M_EPSILON) {
+            return CubicBezierCurve(p0, p3);
+        } else {
+            std::vector<Point<Inexact>> beforePts(beforePl.vertices_begin(), beforePl.vertices_end());
+            auto beforeFit = beforeSpline.numCurves() == 1 ? beforeSpline.curve(0) :
+                             fitCurve(beforePts, beforeSpline.tangent({0, 0}), -beforeSpline.tangent({static_cast<int>(beforeSpline.numCurves()-1), 1}));
+            auto t0 = beforeFit.sourceControl() - beforeFit.source();
+            auto t1 = beforeFit.targetControl() - beforeFit.target();
+            double d0 = sqrt(t0.squared_length());
+            double d1 = sqrt(t1.squared_length());
+
+            double cand_d0 = getAreaD0(area, p0, t0.direction(), t1.direction(), d1, p3);
+            double cand_d1 = getAreaD1(area, p0, t0.direction(), d0, t1.direction(), p3);
+
+            bool cand_d0_valid = cand_d0 > 0 && isfinite(cand_d0);
+            bool cand_d1_valid = cand_d1 > 0 && isfinite(cand_d1);
+            if (!cand_d0_valid && !cand_d1_valid) return std::nullopt;
+            else if (cand_d0_valid && !cand_d1_valid) {
+                d0 = cand_d0;
+            }
+            else if (cand_d1_valid && !cand_d0_valid) {
+                d1 = cand_d1;
+            }
+            else {
+                if (abs(d0 - cand_d0) < abs(d1 - cand_d1)) {
+                    d0 = cand_d0;
+                } else {
+                    d1 = cand_d1;
+                }
+            }
+
+#if DEBUG
+//            ipeRenderer.addPainting([p0, t0, p3, t1, d0, d1](renderer::GeometryRenderer& renderer) {
+//                renderer.setMode(renderer::GeometryRenderer::stroke);
+//                renderer.setStroke(Color(0, 0, 0), 1.0);
+//                renderer.draw(p0);
+//                renderer.draw(Segment<Inexact>(p0, p0 + t0));
+//                renderer.draw(Segment<Inexact>(p3, p3 + t1));
+//                renderer.draw(p3);
+//
+//                renderer.setStroke(Color(255, 0, 0), 1.0);
+//                renderer.draw(Segment<Inexact>(p0, p0 + t0 / sqrt(t0.squared_length()) * d0));
+//                renderer.draw(Segment<Inexact>(p3, p3 + t1 * sqrt(t1.squared_length()) * d1));
+//            }, "Debugging_tangents");
+//            ipeRenderer.nextPage();
+#endif
+
+            return createCubicBezierFromPolar(p0, t0.direction(), d0, t1.direction(), d1, p3);
+        }
+    }
+
     /// Returns two cubic Bézier curves that approximate a spiro spline that in turn approximates the input spline.
     /// The returned curves match the tangents and signed area of the input.
     /// Precondition: the input spline is G^0 continuous and consists of three cubic Bézier curves.
-    std::optional<std::pair<CubicBezierCurve, CubicBezierCurve>>
+    std::optional<CubicBezierSpline>
     findSpiro(const CubicBezierSpline& beforeSpline) {
+        if (beforeSpline.numCurves() != 3) return std::nullopt;
         auto p0 = beforeSpline.controlPoint(0);
         auto p1 = beforeSpline.controlPoint(1);
         auto p5 = beforeSpline.controlPoint(8);
@@ -229,53 +290,15 @@ private:
             std::cout << "Spline empty!" << std::endl;
             return std::nullopt;
         }
-        auto spline1Pl = spline1.polyline(nSegs);
-        auto spline2Pl = spline2.polyline(nSegs);
-        std::vector<Point<Inexact>> spline1Pts(spline1Pl.vertices_begin(), spline1Pl.vertices_end());
-        std::vector<Point<Inexact>> spline2Pts(spline2Pl.vertices_begin(), spline2Pl.vertices_end());
 
-        auto v = spline.tangent(cutParam);
-        auto curve1 = fitCurve(spline1Pts, v0, -v);
-        auto curve2 = fitCurve(spline2Pts, v, -v6);
-        p1 = curve1.sourceControl();
-        p5 = curve2.targetControl();
-        auto p3 = currentControl;
         auto s1a = spline1.signedArea();
         auto s2a = spline2.signedArea();
         auto theTargetSum = targetArea - willBeAdded;
-        auto a0 = -s1a * theTargetSum / (s1a + s2a);
-//        auto a1 = -spline2.signedArea();
-        auto a1 = -s2a * theTargetSum / (s1a + s2a);
+        auto a0 = s1a * theTargetSum / (s1a + s2a);
+        auto a1 = s2a * theTargetSum / (s1a + s2a);
 
-        std::optional<CubicBezierCurve> c0_maybe;
-        if (a0 == 0) {
-            c0_maybe = CubicBezierCurve(p0, p3);
-        } else {
-            auto t00 = v0.direction();
-            auto d00 = sqrt((p1-p0).squared_length());
-            auto t01Wrong = (-v).direction();
-            Direction<Inexact> t01(-t01Wrong.dx(), t01Wrong.dy());
-            auto d01 = getAreaD1(a0, p0, t00, d00, t01, p3);
-            if (d01 > 0) {
-                c0_maybe = createCubicBezierFromPolar(p0, t00, d00, t01, d01, p3);
-            }
-        }
-
-        if (!c0_maybe.has_value()) return std::nullopt;
-
-        std::optional<CubicBezierCurve> c1_maybe;
-        if (a1 == 0) {
-            c1_maybe = CubicBezierCurve(p3, p6);
-        } else {
-            auto t11Wrong = v6.direction();
-            Direction<Inexact> t11(t11Wrong.dx(), -t11Wrong.dy());
-            auto d11 = sqrt((p6-p5).squared_length());
-            auto t10 = v.direction();
-            auto d10 = getAreaD0(a1, p3, t10, t11, d11, p6);
-            if (d10 > 0) {
-                c1_maybe = createCubicBezierFromPolar(p3, t10, d10, t11, d11, p6);
-            }
-        }
+        auto c0_maybe = closeFitSub(spline1, a0);
+        auto c1_maybe = closeFitSub(spline2, a1);
 
         if (!c1_maybe.has_value()) return std::nullopt;
 
@@ -283,21 +306,17 @@ private:
         if (debug) {
             std::cout << "a0: " << a0 << " a1: " << a1 << std::endl;
 
-            ipeRenderer.addPainting([spline, spline1, spline2, curve1, curve2, c0_maybe, c1_maybe](renderer::GeometryRenderer &renderer) {
+            ipeRenderer.addPainting([spline, spline1, spline2, c0_maybe, c1_maybe](renderer::GeometryRenderer &renderer) {
                 renderer.setMode(renderer::GeometryRenderer::stroke);
                 renderer.setStroke(Color(0, 0, 0), 3.0);
                 renderer.draw(spline);
                 renderer.setStroke(Color(255, 0, 0), 3.0);
                 renderer.draw(spline1);
-                renderer.setStroke(Color(255, 255, 0), 3.0);
-                renderer.draw(curve1);
                 renderer.setStroke(Color(255, 0, 255), 3.0);
                 renderer.draw(*c0_maybe);
 
                 renderer.setStroke(Color(0, 255, 0), 3.0);
                 renderer.draw(spline2);
-                renderer.setStroke(Color(0, 255, 255), 3.0);
-                renderer.draw(curve2);
                 renderer.setStroke(Color(0, 0, 255), 3.0);
                 renderer.draw(*c1_maybe);
             });
@@ -305,72 +324,30 @@ private:
         }
 #endif
 
-        return std::pair(*c0_maybe, *c1_maybe);
+        CubicBezierSpline afterSpline;
+        afterSpline.appendCurve(*c0_maybe);
+        afterSpline.appendCurve(*c1_maybe);
+
+        if (debug) {
+            std::cout << "Final area: " << afterSpline.signedArea() << std::endl;
+        }
+        return afterSpline;
     }
 
     /// Returns two cubic Bézier curves that approximate curves c0, c1, and c2 by splitting the spline at parameter param.
     /// The returned curves match the tangents and signed area of the input.
-    std::optional<std::pair<CubicBezierCurve, CubicBezierCurve>>
+    std::optional<CubicBezierSpline>
     closeFit(const CubicBezierSpline& beforeSpline, const CubicBezierSpline::SplineParameter& param) {
-        auto p0 = beforeSpline.controlPoint(0);
-        auto p1 = beforeSpline.controlPoint(1);
-        auto p5 = beforeSpline.controlPoint(8);
-        auto p6 = beforeSpline.controlPoint(9);
-        const auto& c0 = beforeSpline.curve(0);
-        const auto& c1 = beforeSpline.curve(1);
-        const auto& c2 = beforeSpline.curve(2);
-
-        auto p3 = beforeSpline.evaluate(param);
-        auto v = beforeSpline.tangent(param);
+        CubicBezierSpline afterSpline;
 
         auto [firstPart, secondPart] = beforeSpline.split(param);
-        auto firstPartPl = firstPart.polyline(nSegs);
-        std::vector<Point<Inexact>> firstPartPts(firstPartPl.vertices_begin(), firstPartPl.vertices_end());
-        auto secondPartPl = secondPart.polyline(nSegs);
-        std::vector<Point<Inexact>> secondPartPts(secondPartPl.vertices_begin(), secondPartPl.vertices_end());
-        auto firstPartFit = firstPart.numCurves() == 1 ? firstPart.curve(0) : fitCurve(firstPartPts, c0.sourceControl() - p0, -v);
-        auto secondPartFit = secondPart.numCurves() == 1 ? secondPart.curve(0) : fitCurve(secondPartPts, v, c2.targetControl() - p6);
-        p1 = firstPartFit.sourceControl();
-        p5 = secondPartFit.targetControl();
+        auto c0_maybe = closeFitSub(firstPart, firstPart.signedArea());
+        auto c1_maybe = closeFitSub(secondPart, secondPart.signedArea());
+        if (!c0_maybe.has_value() || !c1_maybe.has_value()) return std::nullopt;
 
-        auto a0 = -firstPart.signedArea();
-        auto a1 = -secondPart.signedArea();
-
-        std::optional<CubicBezierCurve> c0_maybe;
-        if (abs(a0) < M_EPSILON) {
-            c0_maybe = CubicBezierCurve(p0, p3);
-        } else {
-            auto v0 = p1 - p0;
-            auto t00 = v0.direction();
-            auto d00 = sqrt(v0.squared_length());
-            auto t01Wrong = (-v).direction();
-            Direction<Inexact> t01(-t01Wrong.dx(), t01Wrong.dy());
-            auto d01 = getAreaD1(a0, p0, t00, d00, t01, p3);
-            if (d01 > 0 && isfinite(d01)) {
-                c0_maybe = createCubicBezierFromPolar(p0, t00, d00, t01, d01, p3);
-            }
-        }
-
-        if (!c0_maybe.has_value()) return std::nullopt;
-
-        std::optional<CubicBezierCurve> c1_maybe;
-        if (abs(a1) < M_EPSILON) {
-            c1_maybe = CubicBezierCurve(p3, p6);
-        } else {
-            auto v1 = p6 - p5;
-            auto t11Wrong = v1.direction();
-            Direction<Inexact> t11(t11Wrong.dx(), -t11Wrong.dy());
-            auto d11 = sqrt(v1.squared_length());
-            auto t10 = v.direction();
-            auto d10 = getAreaD0(a1, p3, t10, t11, d11, p6);
-            if (d10 > 0 && isfinite(d10)) {
-                c1_maybe = createCubicBezierFromPolar(p3, t10, d10, t11, d11, p6);
-            }
-        }
-
-        if (!c1_maybe.has_value()) return std::nullopt;
-
-        return std::pair(*c0_maybe, *c1_maybe);
+        afterSpline.appendCurve(*c0_maybe);
+        afterSpline.appendCurve(*c1_maybe);
+        return afterSpline;
     }
 
     struct CurvatureInfo {
@@ -450,43 +427,65 @@ public:
 
         auto& edata = e->data();
         edata.collapse = std::nullopt;
-        if (e->source()->degree() != 2 || e->target()->degree() != 2) {
+        if (e->source()->degree() != 2) {
             return;
         }
-        const auto& c0 = e->prev()->curve();
-        const auto& c1 = e->curve();
-        const auto& c2 = e->next()->curve();
+        bool doCollapse2 = e->target()->degree() != 2;
 
-        // Determine cost, point, before, after for edge e.
         CubicBezierSpline beforeSpline;
-        beforeSpline.appendCurve(c0);
-        beforeSpline.appendCurve(c1);
-        beforeSpline.appendCurve(c2);
-        auto beforePl = beforeSpline.polyline(nSegs);
+        if (!doCollapse2) {
+            const auto &c0 = e->prev()->curve();
+            const auto &c1 = e->curve();
+            const auto &c2 = e->next()->curve();
 
-        // Degenerate cases
-        if (c0.source() == c0.target()) {
-            edata.collapse = { .cost=0, .before=c1, .after=c2 };
-            return;
-        }
-        if (c1.source() == c1.target()) {
-            edata.collapse = { .cost=0, .before=c0, .after=c2 };
-            return;
-        }
-        if (c2.source() == c2.target()) {
-            edata.collapse = { .cost=0, .before=c0, .after=c1 };
-            return;
-        }
+            // Determine cost, point, before, after for edge e.
+            beforeSpline.appendCurve(c0);
+            beforeSpline.appendCurve(c1);
+            beforeSpline.appendCurve(c2);
+            auto beforePl = beforeSpline.polyline(nSegs);
 
-        // Closed spline that consists of three Béziers.
-        // Current approaches do not work well.
-        // For now, just do not simplify these further.
-        if (c0.source() == c2.target()) {
-            return;
+            // Degenerate cases
+            if (c0.source() == c0.target()) {
+                edata.collapse = {.cost = 0, .result=detail::Collapse3{.before=c1, .after=c2}};
+                return;
+            }
+            if (c1.source() == c1.target()) {
+                edata.collapse = {.cost = 0, .result=detail::Collapse3{.before=c0, .after=c2}};
+                return;
+            }
+            if (c2.source() == c2.target()) {
+                edata.collapse = {.cost=0, .result=detail::Collapse3{.before=c0, .after=c1}};
+                return;
+            }
+
+            // Closed spline that consists of three Béziers.
+            // Current approaches do not work well.
+            // For now, just do not simplify these further.
+            if (c0.source() == c2.target()) {
+                return;
+            }
+        } else {
+            const auto &c0 = e->prev()->curve();
+            const auto &c1 = e->curve();
+
+            // Determine cost, point, before, after for edge e.
+            beforeSpline.appendCurve(c0);
+            beforeSpline.appendCurve(c1);
+            auto beforePl = beforeSpline.polyline(nSegs);
+
+            // Degenerate cases
+            if (c0.source() == c0.target()) {
+                edata.collapse = {.cost = 0, .result=detail::Collapse2{.replacement=c1}};
+                return;
+            }
+            if (c1.source() == c1.target()) {
+                edata.collapse = {.cost = 0, .result=detail::Collapse2{.replacement=c0}};
+                return;
+            }
         }
 
         double minErr = std::numeric_limits<double>::infinity();
-        std::optional<std::pair<CubicBezierCurve, CubicBezierCurve>> best = std::nullopt;
+        std::optional<CubicBezierSpline> best = std::nullopt;
 
         double maxKappaBefore = 0;
         for (int curveIndex = 0; curveIndex < beforeSpline.numCurves(); ++curveIndex) {
@@ -499,11 +498,7 @@ public:
             }
         }
 
-
-        auto evaluate = [&](const CubicBezierCurve& c0_, const CubicBezierCurve& c1_) {
-            CubicBezierSpline afterSpline;
-            afterSpline.appendCurve(c0_);
-            afterSpline.appendCurve(c1_);
+        auto evaluate = [&](const CubicBezierSpline& afterSpline) {
             auto afterPl = afterSpline.polyline(10);
 
             auto curvatureInfo = evaluateCurvature(afterSpline);
@@ -513,12 +508,12 @@ public:
 
             double err = std::numeric_limits<double>::infinity();
             double symDiffErr = std::numeric_limits<double>::infinity();
-            bool createsSmoothConnection = (!connectsSmoothlyTo(c0, c1) || !connectsSmoothlyTo(c1, c2)) && connectsSmoothlyTo(c0_, c1_);
-            if (debug) {
-                std::cout << "c0 connects smoothly to c1: " << connectsSmoothlyTo(c0, c1) << std::endl;
-                std::cout << "c1 connects smoothly to c2: " << connectsSmoothlyTo(c1, c2) << std::endl;
-                std::cout << "c0_ connects smoothly to c1_: " << connectsSmoothlyTo(c0_, c1_) << std::endl;
-            }
+            bool createsSmoothConnection = !isSmooth(beforeSpline) && isSmooth(afterSpline);
+//            if (debug) {
+//                std::cout << "c0 connects smoothly to c1: " << connectsSmoothlyTo(c0, c1) << std::endl;
+//                std::cout << "c1 connects smoothly to c2: " << connectsSmoothlyTo(c1, c2) << std::endl;
+//                std::cout << "c0_ connects smoothly to c1_: " << connectsSmoothlyTo(c0_, c1_) << std::endl;
+//            }
             if ((createsSmoothConnection || maxKappaAfter < 1.1 * maxKappaBefore) && !afterSpline.selfIntersects(0.01)) {
                 symDiffErr = evaluateSymDiff(beforeSpline, afterSpline);
                 err = sqrt(symDiffErr);
@@ -530,7 +525,7 @@ public:
 
             if (err < minErr) {
                 minErr = err;
-                best = {c0_, c1_};
+                best = afterSpline;
             }
 
 #if DEBUG
@@ -587,22 +582,31 @@ public:
 #endif
         };
 
-
-        // choose a point on c1 to use as p3.
-        // for now just equidistant t
-        for (int it = tSteps / 2; it < tSteps * 2 - tSteps / 2; ++it) {
-            int curveToSampleIndex = it / tSteps;
-            double t = tSteps == 1 ? 0.5 : static_cast<double>(it % tSteps) / (tSteps - 1);
-            auto closeFitResult = closeFit(beforeSpline, {curveToSampleIndex, t});
-            if (closeFitResult.has_value()) {
-                evaluate(closeFitResult->first, closeFitResult->second);
+        if (doCollapse2) {
+            auto fit = closeFitSub(beforeSpline, beforeSpline.signedArea());
+            if (fit.has_value()) {
+                CubicBezierSpline afterSpline;
+                afterSpline.appendCurve(*fit);
+                evaluate(afterSpline);
+            }
+        } else {
+            // choose a point on c1 to use as p3.
+            // for now just equidistant t
+            for (int it = 0; it < tSteps; ++it) {
+                auto tit = it / static_cast<double>(tSteps - 1) * 2 + 0.5;
+                int curveToSampleIndex = tSteps == 1 ? 1 : tit;
+                double t = tSteps == 1 ? 0.5 : tit - curveToSampleIndex;
+                auto closeFitResult = closeFit(beforeSpline, {curveToSampleIndex, t});
+                if (closeFitResult.has_value()) {
+                    evaluate(*closeFitResult);
+                }
             }
         }
 
         // Try other collapse approach: fit a smooth curve
         auto spiroResult = findSpiro(beforeSpline);
         if (spiroResult.has_value()) {
-            evaluate(spiroResult->first, spiroResult->second);
+            evaluate(*spiroResult);
         }
 
 #if DEBUG
@@ -612,7 +616,11 @@ public:
 #endif
 
         if (best.has_value()) {
-            edata.collapse = { .cost=minErr, .before=best->first, .after=best->second };
+            if (best->numCurves() == 2) {
+                edata.collapse = {.cost=minErr, .result=detail::Collapse3{.before=best->curve(0), .after=best->curve(1)}};
+            } else if (best->numCurves() == 1) {
+                edata.collapse = {.cost=minErr, .result=detail::Collapse2{.replacement=best->curve(0)}};
+            }
         }
     }
 };

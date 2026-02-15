@@ -212,6 +212,78 @@ public:
         perform(g);
     }
 };
+
+template <Graph2Like Graph>
+struct MergeEdgeOperation : public Operation<Graph> {
+public:
+    using Edge_handle = Graph::Edge_handle;
+    using Vertex_handle = Graph::Vertex_handle;
+    using Op = Operation<Graph>;
+    using Curve = Graph::Curve_2;
+    using ED = Graph::Edge_data;
+    using Operation<Graph>::m_edge;
+
+    Curve m_replacement;
+    Curve m_c;
+    Curve m_cPrev;
+
+    ED m_replacementData;
+    ED m_eData;
+    ED m_prevData;
+
+public:
+    MergeEdgeOperation(Edge_handle e, Curve replacement) :
+            Operation<Graph>(e), m_replacement(replacement),
+            m_c(e->curve()), m_cPrev(e->prev()->curve()) {
+        m_eData = e->data();
+        m_prevData = e->prev()->data();
+    }
+    void undo(Graph& g) {
+        m_replacementData = m_edge->data();
+
+        auto thisOp = m_edge->data().hist;
+        auto vh = g.subdivide_edge(m_edge, m_cPrev, m_c);
+        m_edge = vh->outgoing();
+        auto& e = m_edge;
+        auto p = m_edge->prev();
+
+        e->data() = m_eData;
+        p->data() = m_prevData;
+
+        m_edge->data().futr = thisOp;
+
+        if (m_eData.hist != nullptr) {
+            m_eData.hist->m_edge = e;
+        }
+        if (m_eData.futr != nullptr) {
+            m_eData.futr->m_edge = e;
+        }
+        if (m_prevData.hist != nullptr) {
+            m_prevData.hist->m_edge = p;
+        }
+        if (m_prevData.futr != nullptr) {
+            m_prevData.futr->m_edge = p;
+        }
+    }
+    Edge_handle perform(Graph& g) {
+        auto eh = g.merge_edge_with_prev(m_edge, m_replacement);
+        m_edge = eh;
+
+        eh->data() = m_replacementData;
+
+        if (m_replacementData.hist != nullptr) {
+            m_replacementData.hist->m_edge = eh;
+        }
+        if (m_replacementData.futr != nullptr) {
+            m_replacementData.futr->m_edge = eh;
+        }
+        return eh;
+    }
+    void redo(Graph& g) {
+        perform(g);
+    }
+};
+
 template <Graph2Like Graph> struct OperationBatch;
 template <class Graph>
 concept EdgeStoredOperations = requires(typename Graph::Edge_data d) {
@@ -322,6 +394,17 @@ class CollapseHistoryGraphAdaptor {
         m_history.push(std::move(operation));
         m_undone = {};
         return v;
+    }
+    /// Merge an edge with the one that precedes it and replace them with newCurve.
+    /// Returns the handle of the new edge.
+    /// \pre Source vertex of edge e has degree 2.
+    Edge_handle merge_edge_with_prev(Edge_handle e, Curve_2 newCurve) {
+        auto operation = std::make_shared<detail::MergeEdgeOperation<Graph>>(e, newCurve);
+        auto eh = operation->perform(m_graph);
+        eh->data().hist = operation;
+        m_history.push(std::move(operation));
+        m_undone = {};
+        return eh;
     }
 };
 static_assert(Graph2Like<CollapseHistoryGraphAdaptor<Bezier_graph_2<std::monostate, std::monostate>>>);

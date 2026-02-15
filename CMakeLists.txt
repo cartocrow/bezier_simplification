@@ -25,7 +25,7 @@ if (EMSCRIPTEN)
 else()
     add_subdirectory(demos)
     add_subdirectory(frontend)
-    #add_subdirectory(test)
+    add_subdirectory(test)
 endif()
 
 message(STATUS "CGAL version: ${CGAL_VERSION}")

@@ -679,7 +679,7 @@ void BezierSimplificationDemo::addMinimumDistanceTab() {
     m_minAngle = new DoubleSlider(Qt::Horizontal);
     m_minAngle->setMinimum(0);
     m_minAngle->setMaximum(std::numbers::pi);
-    m_minAngle->setValue(1);
+    m_minAngle->setValue(std::numbers::pi / 3);
     m_forcer.m_minAngle = m_minAngle->value();
     vLayout->addWidget(m_minAngle);
 
@@ -969,19 +969,36 @@ void BezierSimplificationDemo::addPaintings() {
         const auto& d = eh->data();
         renderer.setStroke(Color(50, 200, 50), 2.0);
         if (d.collapse.has_value()) {
-            const auto& col = *d.collapse;
-            renderer.draw(col.before.transform(inv));
-            renderer.draw(col.after.transform(inv));
-            auto bb = col.before.transform(inv).bbox();
-            auto bbC = Point<Inexact>((bb.xmin() + bb.xmax()) / 2, (bb.ymin() + bb.ymax())  / 2);
-            renderer.drawText(bbC, std::to_string(col.cost));
+            const auto& col = d.collapse->result;
+            if (auto* col3P = std::get_if<curved_simplification::detail::Collapse3>(&col)) {
+                auto& col3 = *col3P;
+                renderer.draw(col3.before.transform(inv));
+                renderer.draw(col3.after.transform(inv));
+                auto bb = col3.before.transform(inv).bbox();
+                auto bbC = Point<Inexact>((bb.xmin() + bb.xmax()) / 2, (bb.ymin() + bb.ymax()) / 2);
+                renderer.drawText(bbC, std::to_string(d.collapse->cost));
+            } else if (auto* col2P = std::get_if<curved_simplification::detail::Collapse2>(&col)) {
+                auto& col2 = *col2P;
+                renderer.draw(col2.replacement.transform(inv));
+                auto bb = col2.replacement.transform(inv).bbox();
+                auto bbC = Point<Inexact>((bb.xmin() + bb.xmax()) / 2, (bb.ymin() + bb.ymax()) / 2);
+                renderer.drawText(bbC, std::to_string(d.collapse->cost));
+            }
         }
         if (d.hist == nullptr) return;
-        auto op = std::dynamic_pointer_cast<curved_simplification::detail::CollapseEdgeOperation<BaseGraph>>(d.hist);
-        renderer.setStroke(Color(200, 50, 200), 2.0);
-        renderer.draw(op->m_c0.transform(inv));
-        renderer.draw(op->m_c1.transform(inv));
-        renderer.draw(op->m_c2.transform(inv));
+        auto opC = std::dynamic_pointer_cast<curved_simplification::detail::CollapseEdgeOperation<BaseGraph>>(d.hist);
+        if (opC != nullptr) {
+            renderer.setStroke(Color(200, 50, 200), 2.0);
+            renderer.draw(opC->m_c0.transform(inv));
+            renderer.draw(opC->m_c1.transform(inv));
+            renderer.draw(opC->m_c2.transform(inv));
+        }
+        auto opM = std::dynamic_pointer_cast<curved_simplification::detail::MergeEdgeOperation<BaseGraph>>(d.hist);
+        if (opM != nullptr) {
+            renderer.setStroke(Color(200, 50, 200), 2.0);
+            renderer.draw(opM->m_c.transform(inv));
+            renderer.draw(opM->m_cPrev.transform(inv));
+        }
     }, "Debug edge");
 
     m_renderer->addPainting([this](GeometryRenderer& renderer) {
