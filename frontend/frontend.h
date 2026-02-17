@@ -179,6 +179,7 @@ class BezierSimplificationDemo : public QMainWindow {
     BaseGraph m_original;
     TopoSet<Inexact> m_toposet;
     CGAL::Aff_transformation_2<Inexact> m_transform;
+    CGAL::Aff_transformation_2<Inexact> m_backupTransform;
     OGRSpatialReference m_spatialRef;
     std::unique_ptr<DoubleSliderSpinBox> m_minDist;
     std::unique_ptr<DoubleSliderSpinBox> m_minAdjDist;

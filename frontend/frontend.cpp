@@ -699,12 +699,13 @@ void BezierSimplificationDemo::addMinimumDistanceTab() {
 
     auto* minAdjDistLabel = new QLabel("Minimum adjacency distance");
     vLayout->addWidget(minAdjDistLabel);
-    auto* minAdjDist = new DoubleSlider(Qt::Horizontal);
-    vLayout->addWidget(minAdjDist);
 
     auto* minAdjDistSpinBox = new QDoubleSpinBox();
     minAdjDistSpinBox->setSuffix(" m");
     vLayout->addWidget(minAdjDistSpinBox);
+
+    auto* minAdjDist = new DoubleSlider(Qt::Horizontal);
+    vLayout->addWidget(minAdjDist);
 
     m_minAdjDist = std::make_unique<DoubleSliderSpinBox>(minAdjDist, minAdjDistSpinBox);
     m_minAdjDist->setMinimum(0);
@@ -714,12 +715,13 @@ void BezierSimplificationDemo::addMinimumDistanceTab() {
 
     auto* minDistLabel = new QLabel("Minimum distance between lines");
     vLayout->addWidget(minDistLabel);
-    auto* minDist = new DoubleSlider(Qt::Horizontal);
-    vLayout->addWidget(minDist);
 
     auto* minDistSpinBox = new QDoubleSpinBox();
     minDistSpinBox->setSuffix(" m");
     vLayout->addWidget(minDistSpinBox);
+
+    auto* minDist = new DoubleSlider(Qt::Horizontal);
+    vLayout->addWidget(minDist);
 
     m_minDist = std::make_unique<DoubleSliderSpinBox>(minDist, minDistSpinBox);
     m_minDist->setMinimum(0);
@@ -730,12 +732,12 @@ void BezierSimplificationDemo::addMinimumDistanceTab() {
     auto* minComponentLengthLabel = new QLabel("Minimum component length");
     vLayout->addWidget(minComponentLengthLabel);
     auto* minComponentLength = new DoubleSlider(Qt::Horizontal);
-    
-    vLayout->addWidget(minComponentLength);
 
     auto* minCompLengthSpinBox = new QDoubleSpinBox();
     minCompLengthSpinBox->setSuffix(" m");
     vLayout->addWidget(minCompLengthSpinBox);
+
+    vLayout->addWidget(minComponentLength);
 
     m_minComponentLength = std::make_unique<DoubleSliderSpinBox>(minComponentLength, minCompLengthSpinBox);
     m_minComponentLength->setMinimum(0);
@@ -851,6 +853,8 @@ void BezierSimplificationDemo::addDrawingTab() {
     vLayout->addWidget(m_showNewControlPoints);
     m_showDebugInfo = new QCheckBox("Show debug info");
     vLayout->addWidget(m_showDebugInfo);
+    auto* doTransform = new QCheckBox("Transform to 1000 x 1000");
+    vLayout->addWidget(doTransform);
 
     connect(m_showEdgeDirection, &QCheckBox::stateChanged, [this]() {
         m_renderer->repaint();
@@ -865,6 +869,32 @@ void BezierSimplificationDemo::addDrawingTab() {
         m_renderer->repaint();
     });
     connect(m_showDebugInfo, &QCheckBox::stateChanged, [this]() {
+        m_renderer->repaint();
+    });
+    connect(doTransform, &QCheckBox::stateChanged, [this, doTransform]() {
+        auto prevScale = getScale();
+        auto minDistOld = m_minDist->value();
+        auto minAdjDistOld = m_minAdjDist->value();
+        auto minComponentLengthOld = m_minComponentLength->value();
+
+        if (doTransform->isChecked()) {
+            m_backupTransform = m_transform;
+            m_transform = CGAL::IDENTITY;
+        } else {
+            m_transform = m_backupTransform;
+        }
+
+        m_minDist->setMaximum(getScale() * 30);
+        m_minAdjDist->setMaximum(getScale() * 30);
+        m_minComponentLength->setMaximum(getScale() * 100);
+        m_minDist->setValue(getScale() / prevScale * minDistOld);
+        m_minAdjDist->setValue(getScale() / prevScale * minAdjDistOld);
+        m_minComponentLength->setValue(getScale() / prevScale * minComponentLengthOld);
+        repaintVoronoi();
+        Rectangle<Inexact> rect = m_baseGraph.bbox();
+        auto rectT = rect.transform(m_transform.inverse());
+        Box boxT(rectT.xmin(), rectT.ymin(), rectT.xmax(), rectT.ymax());
+        m_renderer->fitInView(boxT);
         m_renderer->repaint();
     });
 }
@@ -1100,11 +1130,13 @@ void BezierSimplificationDemo::checkIntersections() {
     GeometryRenderer& r = m_intersectionsPainting;
     r.setMode(GeometryRenderer::stroke);
     r.setStroke(Color(255, 0, 0), 2.0);
-    
+
+    auto inv = m_transform.inverse();
+
     for (auto eit = m_baseGraph.edges_begin(); eit != m_baseGraph.edges_end(); ++eit) {
         if (eit->curve().selfIntersects()) {
             std::cout << "Found self-intersection!" << std::endl;
-            r.draw(eit->curve());
+            r.draw(eit->curve().transform(inv));
         }
         bcqt.insert(eit);
     }
@@ -1117,8 +1149,8 @@ void BezierSimplificationDemo::checkIntersections() {
 
             if (other->curve().sub(0.01, 0.99).intersects(eit->curve())) {
                 std::cout << "Found intersection!" << std::endl;
-                r.draw(eit->curve());
-                r.draw(other->curve());
+                r.draw(eit->curve().transform(inv));
+                r.draw(other->curve().transform(inv));
                 return true;
             }
             return false;
