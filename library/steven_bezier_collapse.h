@@ -163,6 +163,23 @@ private:
             }
 
             if (debug) {
+                ipeRenderer.addPainting([option1, s1, option2, s2, l, currentControl, spline](renderer::GeometryRenderer &renderer) {
+                    renderer.setMode(renderer::GeometryRenderer::stroke);
+                    renderer.setStroke(Color(255, 0, 0), 3.0);
+                    renderer.draw(s1);
+                    renderer.draw(option1);
+                    renderer.setStroke(Color(0, 0, 255), 3.0);
+                    renderer.draw(s2);
+                    renderer.draw(option2);
+                    renderer.setStroke(Color(0, 255, 0), 3.0);
+                    renderer.draw(l);
+                    renderer.draw(currentControl);
+                    renderer.draw(spline);
+                }, "Candidate spline");
+                ipeRenderer.nextPage();
+            }
+
+            if (debug) {
                 std::cout << "Tried control points: " << option1 << "  and  " << option2 << std::endl;
                 std::cout << "Splines have area: " << a1 << "  and  " << a2 << std::endl;
             }
@@ -201,9 +218,33 @@ private:
                         s1 = candidateSpline;
                         a1 = candidateArea;
                         option1 = candidateControl;
-                        candidateControl = currentControl + 2 * (option1 - currentControl);
+
+                        if (debug) {
+                            ipeRenderer.addPainting([candidateSpline, option1, currentControl, candidateControl](renderer::GeometryRenderer &renderer) {
+                                renderer.setMode(renderer::GeometryRenderer::stroke);
+                                renderer.setStroke(Color(0, 0, 0), 3.0);
+                                renderer.draw(candidateSpline);
+                                renderer.setStroke(Color(255, 0, 0), 3.0);
+                                renderer.draw(option1);
+                                renderer.setStroke(Color(0, 255, 0), 3.0);
+                                renderer.draw(currentControl);
+                                renderer.setStroke(Color(0, 0, 255), 3.0);
+                                renderer.draw(candidateControl);
+                            }, "Candidate spline");
+                            ipeRenderer.nextPage();
+                        }
+
+                        candidateControl = option1 + 2 * (option1 - currentControl);
                         std::tie(candidateSpline, candidateArea) = splineAndArea(candidateControl);
                         --remainingIterations;
+                    }
+                    if (debug) {
+                        ipeRenderer.addPainting([candidateSpline](renderer::GeometryRenderer &renderer) {
+                            renderer.setMode(renderer::GeometryRenderer::stroke);
+                            renderer.setStroke(Color(0, 0, 0), 3.0);
+                            renderer.draw(candidateSpline);
+                        }, "Candidate spline");
+                        ipeRenderer.nextPage();
                     }
                     if (targetArea < candidateArea) {
                         return std::nullopt;
@@ -230,9 +271,33 @@ private:
                         s2 = candidateSpline;
                         a2 = candidateArea;
                         option2 = candidateControl;
-                        candidateControl = currentControl + 2 * (option2 - currentControl);
+
+                        if (debug) {
+                            ipeRenderer.addPainting([candidateSpline, option2, currentControl, candidateControl](renderer::GeometryRenderer &renderer) {
+                                renderer.setMode(renderer::GeometryRenderer::stroke);
+                                renderer.setStroke(Color(0, 0, 0), 3.0);
+                                renderer.draw(candidateSpline);
+                                renderer.setStroke(Color(255, 0, 0), 3.0);
+                                renderer.draw(option2);
+                                renderer.setStroke(Color(0, 255, 0), 3.0);
+                                renderer.draw(currentControl);
+                                renderer.setStroke(Color(0, 0, 255), 3.0);
+                                renderer.draw(candidateControl);
+                            }, "Candidate spline");
+                            ipeRenderer.nextPage();
+                        }
+
+                        candidateControl = option2 + 2 * (option2 - currentControl);
                         std::tie(candidateSpline, candidateArea) = splineAndArea(candidateControl);
                         --remainingIterations;
+                    }
+                    if (debug) {
+                        ipeRenderer.addPainting([candidateSpline](renderer::GeometryRenderer &renderer) {
+                            renderer.setMode(renderer::GeometryRenderer::stroke);
+                            renderer.setStroke(Color(0, 0, 0), 3.0);
+                            renderer.draw(candidateSpline);
+                        }, "Candidate spline");
+                        ipeRenderer.nextPage();
                     }
                     if (targetArea > candidateArea) {
                         return std::nullopt;
@@ -254,7 +319,18 @@ private:
                 // cut the interval in twice
                 auto &[lowerC, lowerS, lowerA] = lower;
                 auto &[upperC, upperS, upperA] = upper;
-//                    auto cutControl = lowerC + (targetArea - lowerA) / (upperA - lowerA) * (upperC - lowerC);
+
+                if (debug) {
+                    ipeRenderer.addPainting([lowerS, upperS](renderer::GeometryRenderer &renderer) {
+                        renderer.setMode(renderer::GeometryRenderer::stroke);
+                        renderer.setStroke(Color(0, 0, 255), 3.0);
+                        renderer.draw(lowerS);
+                        renderer.setStroke(Color(255, 0, 0), 3.0);
+                        renderer.draw(upperS);
+                    }, "Candidate spline");
+                    ipeRenderer.nextPage();
+                }
+
                 auto cutControl = CGAL::midpoint(lowerC, upperC);
                 auto [cutSpline, cutArea] = splineAndArea(cutControl);
                 if (targetArea < cutArea) {
@@ -391,20 +467,7 @@ private:
         }
         CGAL::insert_non_intersecting_curves(arr, beforePlXMCurves.begin(), beforePlXMCurves.end());
         CGAL::insert(arr, afterPlE.edges_begin(), afterPlE.edges_end());
-#if DEBUG
-        if (debug) {
-            ipeRenderer.addPainting([beforeSpline, afterSpline, arr](renderer::GeometryRenderer& renderer) {
-                renderer.setMode(renderer::GeometryRenderer::stroke);
-                renderer.draw(beforeSpline);
-                renderer.draw(afterSpline);
-                for (auto eit = arr.edges_begin(); eit != arr.edges_end(); ++eit) {
-                    Segment<Exact> seg = eit->curve();
-                    renderer.draw(seg);
-                }
-            });
-            ipeRenderer.nextPage();
-        }
-#endif
+
         double symDiffErr = 0;
         for (auto fit = arr.faces_begin(); fit != arr.faces_end(); ++fit) {
             if (fit->is_unbounded()) continue;
@@ -538,7 +601,6 @@ public:
                 ipeRenderer.addPainting([afterSpline, err, symDiffErr, createsSmoothConnection, maxKappaBefore, maxKappaAfter, avgKappaAfter, curvatureTotals, this](renderer::GeometryRenderer& renderer) {
                     renderer.setStroke(Color(200, 0, 200), 0.1);
                     renderer.setStrokeOpacity(100);
-
                     for (int curveIndex = 0; curveIndex < afterSpline.numCurves(); ++curveIndex) {
                         for (int tStep = 0; tStep <= nSegs; ++tStep) {
                             double t = static_cast<double>(tStep) / nSegs;
@@ -549,10 +611,14 @@ public:
                             renderer.draw(Segment<Inexact>(p, p + 500 * c * n));
                         }
                     }
-
+                }, "Curvature");
+                ipeRenderer.addPainting([afterSpline, err, symDiffErr, createsSmoothConnection, maxKappaBefore, maxKappaAfter, avgKappaAfter, curvatureTotals, this](renderer::GeometryRenderer& renderer) {
                     renderer.setStroke(Color(0, 0, 0), 3.0);
                     renderer.setStrokeOpacity(255);
                     renderer.draw(afterSpline);
+                }, "After");
+
+                ipeRenderer.addPainting([afterSpline, err, symDiffErr, createsSmoothConnection, maxKappaBefore, maxKappaAfter, avgKappaAfter, curvatureTotals, this](renderer::GeometryRenderer& renderer) {
                     std::vector<CubicBezierSpline::SplinePoint> infls;
                     afterSpline.inflections(std::back_inserter(infls));
                     for (const auto& infl : infls) {
@@ -576,7 +642,7 @@ public:
                     if (createsSmoothConnection) {
                         renderer.drawText({10, 80}, "Creates smooth connection!");
                     }
-                }, "After");
+                }, "Extra info");
                 ipeRenderer.nextPage();
             }
 #endif
