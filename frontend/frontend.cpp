@@ -856,6 +856,15 @@ void BezierSimplificationDemo::addDrawingTab() {
     auto* doTransform = new QCheckBox("Transform to 1000 x 1000");
     vLayout->addWidget(doTransform);
 
+    m_showCurvature = new QCheckBox("Show curvature");
+    vLayout->addWidget(m_showCurvature);
+    m_curvatureScale = new DoubleSlider();
+    m_curvatureScale->setOrientation(Qt::Horizontal);
+    m_curvatureScale->setMinimum(0);
+    m_curvatureScale->setValue(100);
+    m_curvatureScale->setMaximum(1000);
+    vLayout->addWidget(m_curvatureScale);
+
     connect(m_showEdgeDirection, &QCheckBox::stateChanged, [this]() {
         m_renderer->repaint();
     });
@@ -895,6 +904,12 @@ void BezierSimplificationDemo::addDrawingTab() {
         auto rectT = rect.transform(m_transform.inverse());
         Box boxT(rectT.xmin(), rectT.ymin(), rectT.xmax(), rectT.ymax());
         m_renderer->fitInView(boxT);
+        m_renderer->repaint();
+    });
+    connect(m_showCurvature, &QCheckBox::stateChanged, [this]() {
+        m_renderer->repaint();
+    });
+    connect(m_curvatureScale, &DoubleSlider::valueChanged, [this]() {
         m_renderer->repaint();
     });
 }
@@ -945,6 +960,25 @@ void BezierSimplificationDemo::addPaintings() {
         renderer.setFill(Color(230, 230, 230));
         renderer.draw(Circle<Inexact>(m_renderer->mousePosition(), m_minDist->value() * m_minDist->value()));
     }, "Min. dist. disk");
+
+    m_renderer->addPainting([this](GeometryRenderer& renderer) {
+        if (!m_showCurvature->isChecked()) return;
+        renderer.setMode(GeometryRenderer::stroke);
+        renderer.setStroke(Color(200, 0, 200), 2.0);
+        renderer.setStrokeOpacity(10);
+        for (auto eit = m_baseGraph.edges_begin(); eit != m_baseGraph.edges_end(); ++eit) {
+            int tSteps = 1000;
+            auto& curve = eit->curve();
+            for (int tStep = 0; tStep <= tSteps; ++tStep) {
+                double t = static_cast<double>(tStep) / tSteps;
+                auto c = curve.curvature(t);
+                auto n = curve.normal(t);
+                n /= sqrt(n.squared_length());
+                auto p = curve.position(t);
+                renderer.draw(Segment<Inexact>(p, p + m_curvatureScale->value() * c * n));
+            }
+        }
+    }, "Curvature");
 
     m_renderer->addPainting([this](GeometryRenderer& renderer) {
         auto inv = m_transform.inverse();

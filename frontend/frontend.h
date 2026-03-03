@@ -197,6 +197,8 @@ class BezierSimplificationDemo : public QMainWindow {
     QCheckBox* m_showNewControlPoints;
     QCheckBox* m_showDebugInfo;
     QCheckBox* m_ignoreBbox;
+    QCheckBox* m_showCurvature;
+    DoubleSlider* m_curvatureScale;
 
    void baseModified(bool modified);
 
