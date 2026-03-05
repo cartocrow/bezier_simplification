@@ -140,6 +140,8 @@ void BezierSimplificationDemo::loadInput(const std::filesystem::path& path) {
         auto bbox = CGAL::bbox_2(points.begin(), points.end());
 
         m_transform = fitInto(bbox, Rectangle<Inexact>(0, 0, 1000, 1000));
+        m_graphPainting->m_drawSettings.m_trans = m_transform.inverse();
+        m_editGraphPainting->m_drawSettings.m_trans = m_transform.inverse();
 
         auto rectT = Rectangle<Inexact>(bbox).transform(m_transform);
         auto bboxT = Box(rectT.xmin(), rectT.ymin(), rectT.xmax(), rectT.ymax());
@@ -1128,8 +1130,8 @@ void BezierSimplificationDemo::addPaintings() {
             std::optional<CubicBezierCurve::CurvePoint> nearest;
             double minDist = std::numeric_limits<double>::infinity();
             for (auto eit = m_editBaseGraph.edges_begin(); eit != m_editBaseGraph.edges_end(); ++eit) {
-                auto n = eit->curve().nearest(mp);
-                auto diff = m_renderer->convertPoint(n.point) - m_renderer->convertPoint(mp);
+                auto n = eit->curve().nearest(mp.transform(m_transform));
+                auto diff = m_renderer->convertPoint(n.point) - m_renderer->convertPoint(mp.transform(m_transform));
                 auto d2 = diff.x() * diff.x() + diff.y() * diff.y();
                 if (d2 < minDist && d2 < 400) {
                     minDist = d2;
@@ -1142,7 +1144,7 @@ void BezierSimplificationDemo::addPaintings() {
             m_shiftNearest = {*closest, *nearest};
 
             renderer.setStroke(Color(255, 0, 0), 1.0);
-            renderer.draw(nearest->point);
+            renderer.draw(nearest->point.transform(m_transform.inverse()));
         }
         if (m_altDown) {
             // naive...
@@ -1150,7 +1152,7 @@ void BezierSimplificationDemo::addPaintings() {
             double minDist = std::numeric_limits<double>::infinity();
             for (auto vit = m_editBaseGraph.vertices_begin(); vit != m_editBaseGraph.vertices_end(); ++vit) {
                 if (vit->degree() != 2) continue;
-                auto diff = m_renderer->convertPoint(vit->point()) - m_renderer->convertPoint(mp);
+                auto diff = m_renderer->convertPoint(vit->point()) - m_renderer->convertPoint(mp.transform(m_transform));
                 auto d2 = diff.x() * diff.x() + diff.y() * diff.y();
                 if (d2 < minDist && d2 < 400) {
                     minDist = d2;
@@ -1162,7 +1164,7 @@ void BezierSimplificationDemo::addPaintings() {
             m_altNearest = *closest;
 
             renderer.setStroke(Color(255, 0, 0), 1.0);
-            renderer.draw((*closest)->point());
+            renderer.draw((*closest)->point().transform(m_transform.inverse()));
         }
     }, "Cut point");
 
