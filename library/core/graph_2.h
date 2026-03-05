@@ -65,9 +65,10 @@ class Graph_2 {
         std::unordered_map<const Vertex*, Vertex_handle> vmap;
 
         for (auto vit = other.m_vertices.begin(); vit != other.m_vertices.end(); ++vit) {
-            m_vertices.emplace_back(*vit);
+            m_vertices.emplace_back();
             auto new_vit = std::prev(m_vertices.end());
-            new_vit->m_incident.clear();
+            new_vit->point() = vit->point();
+            new_vit->data() = vit->data();
 
             vmap[&*vit] = new_vit;
         }
@@ -99,6 +100,12 @@ class Graph_2 {
         return *this;
     }
 
+    Graph_2() = default;
+
+    Graph_2(const Graph_2& other) {
+        *this = other;
+    }
+
     Graph_2 transform(CGAL::Aff_transformation_2<Kernel> trans) const {
         Graph_2 transformed;
 
@@ -108,10 +115,10 @@ class Graph_2 {
         std::unordered_map<const Vertex*, Vertex_handle> vmap;
 
         for (auto vit = m_vertices.begin(); vit != m_vertices.end(); ++vit) {
-            transformed.m_vertices.emplace_back(*vit);
+            transformed.m_vertices.emplace_back();
             auto new_vit = std::prev(transformed.m_vertices.end());
-            new_vit->point() = new_vit->point().transform(trans);
-            new_vit->m_incident.clear();
+            new_vit->point() = vit->point().transform(trans);
+            new_vit->data() = vit->data();
 
             vmap[&*vit] = new_vit;
         }

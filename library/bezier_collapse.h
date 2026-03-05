@@ -343,6 +343,8 @@ class BezierCollapse {
 
         const auto& clps = edata.collapse->result;
 
+        m_g.startBatch();
+
         if (auto* clps2P = std::get_if<detail::Collapse2>(&clps)) {
             auto& clps2 = *clps2P;
             Edge_handle prev = e->prev();
@@ -436,6 +438,8 @@ class BezierCollapse {
         } else {
             throw std::runtime_error("Unknown collapse");
         }
+
+        m_g.endBatch();
     }
 
 	bool step() {

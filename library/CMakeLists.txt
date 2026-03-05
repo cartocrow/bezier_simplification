@@ -4,6 +4,7 @@ set(SOURCES
     schneider.cpp
     read_graph_gdal.cpp
     intersection_helpers.cpp
+    read_ipe_bezier_spline.cpp
 
     spiro_helpers/spiro/bezctx.c
     spiro_helpers/spiro/spiro.c
@@ -34,6 +35,7 @@ set(HEADERS
     read_graph_gdal.h
     conic_types.h
     intersection_helpers.h
+    read_ipe_bezier_spline.h
 
     spiro_helpers/spiro/bezctx.h
     spiro_helpers/spiro/bezctx_intf.h

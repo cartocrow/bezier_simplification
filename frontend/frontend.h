@@ -165,6 +165,93 @@ signals:
     void valueChanged(double newValue);
 };
 
+using InnerControlPoint = std::pair<Edge_handle, bool>;
+
+struct ControlPoint {
+    std::variant<InnerControlPoint, Vertex_handle> type;
+
+    Point<Inexact> point() const {
+        if (const auto icpP = std::get_if<InnerControlPoint>(&type)) {
+            const auto& curve = icpP->first->curve();
+            return icpP->second ? curve.targetControl() : curve.sourceControl();
+        }
+        else if (const auto vhP = std::get_if<Vertex_handle>(&type)) {
+            return (*vhP)->point();
+        }
+        else {
+            throw std::runtime_error("Unknown control point type!");
+        }
+    }
+};
+
+struct Dragging {
+    ControlPoint controlPoint;
+    Point<Inexact> startPoint;
+};
+
+class GraphPainting : public GeometryPainting {
+public:
+    BaseGraph& m_graph;
+
+    struct DrawSettings {
+        CGAL::Aff_transformation_2<Inexact> m_trans;
+        bool m_showVertices;
+        bool m_showEdgeDirection;
+        bool m_showControlPoints;
+
+        DrawSettings() : m_trans(CGAL::IDENTITY), m_showVertices(false), m_showEdgeDirection(false), m_showControlPoints(false) {};
+    };
+
+    DrawSettings m_drawSettings;
+
+    GraphPainting(BaseGraph& graph, DrawSettings drawSettings = DrawSettings{}) : m_graph(graph), m_drawSettings(drawSettings) {};
+
+    void paint(GeometryRenderer& renderer) const override {
+        const auto& m_trans = m_drawSettings.m_trans;
+        const auto& m_showVertices = m_drawSettings.m_showVertices;
+        const auto& m_showEdgeDirection = m_drawSettings.m_showEdgeDirection;
+        const auto& m_showControlPoints = m_drawSettings.m_showControlPoints;
+
+        renderer.setMode(GeometryRenderer::stroke);
+        renderer.setStroke(Color(0, 0, 0), 2.0);
+        for (auto eit = m_graph.edges_begin(); eit != m_graph.edges_end(); ++eit) {
+//            if (m_showDebugInfo->isChecked() && eit->data().collapse.has_value()) {
+//                renderer.setStroke(Color(50, 200, 50), 2.0);
+//            } else {
+            renderer.setStroke(Color(0, 0, 0), 2.0);
+//            }
+            renderer.draw(eit->curve().transform(m_trans));
+            if (m_showEdgeDirection) {
+                renderer.setStroke(Color(0, 0, 0), 6.0);
+                renderer.draw(eit->curve().split(0.25).first.transform(m_trans));
+            }
+        }
+        if (m_showControlPoints) {
+            // Control polylines
+            for (auto eit = m_graph.edges_begin(); eit != m_graph.edges_end(); ++eit) {
+                renderer.setStroke(Color(0, 255, 0), 1.0);
+                Polyline<Inexact> pl;
+                for (int c = 0; c < 4; ++c) pl.push_back(eit->curve().control(c));
+                renderer.draw(pl.transform(m_trans));
+            }
+            // Control points
+            for (auto eit = m_graph.edges_begin(); eit != m_graph.edges_end(); ++eit) {
+                renderer.setStroke(Color(0, 0, 255), 2.0);
+                renderer.draw(eit->curve().sourceControl().transform(m_trans));
+                renderer.draw(eit->curve().targetControl().transform(m_trans));
+                renderer.setStroke(Color(255, 0, 255), 2.0);
+                renderer.draw(eit->curve().source().transform(m_trans));
+                renderer.draw(eit->curve().target().transform(m_trans));
+            }
+        }
+        if (m_showVertices) {
+            for (auto vit = m_graph.vertices_begin(); vit != m_graph.vertices_end(); ++vit) {
+                renderer.draw(vit->point().transform(m_trans));
+            }
+        }
+    }
+};
+
 class BezierSimplificationDemo : public QMainWindow {
 	Q_OBJECT
 
@@ -173,6 +260,8 @@ class BezierSimplificationDemo : public QMainWindow {
 
 	BaseGraph m_baseGraph;
     Graph m_graph;
+    BaseGraph m_editBaseGraph;
+    Graph m_editGraph;
     BaseGraph m_beforeReconstruct;
 	Collapse m_collapse;
     std::optional<Edge_handle> m_debugEdge;
@@ -191,10 +280,7 @@ class BezierSimplificationDemo : public QMainWindow {
     QTabWidget* m_tabs;
     QCheckBox* m_editControlPoints;
     QSpinBox* m_desiredComplexity;
-    QCheckBox* m_showEdgeDirection;
     QCheckBox* m_showOldVertices;
-    QCheckBox* m_showNewVertices;
-    QCheckBox* m_showNewControlPoints;
     QCheckBox* m_showDebugInfo;
     QCheckBox* m_ignoreBbox;
     QCheckBox* m_showCurvature;
@@ -202,15 +288,8 @@ class BezierSimplificationDemo : public QMainWindow {
 
    void baseModified(bool modified);
 
-    BaseGraph m_backup;
-
-    struct ControlPoint {
-        Point<Inexact> point;
-        std::variant<std::pair<Edge_handle, bool>, Vertex_handle> type;
-    };
-
     std::vector<std::shared_ptr<ControlPoint>> m_editables;
-    std::shared_ptr<ControlPoint> m_dragging;
+    std::shared_ptr<Dragging> m_dragging;
     std::vector<ReferenceData> m_referenceData;
     Box m_referencePolygon;
 
@@ -242,6 +321,14 @@ class BezierSimplificationDemo : public QMainWindow {
         {0xBB3087},
     };
 
+    std::shared_ptr<GraphPainting> m_graphPainting;
+    std::shared_ptr<GraphPainting> m_editGraphPainting = nullptr;
+
+    bool m_shiftDown = false;
+    bool m_altDown = false;
+    std::optional<std::pair<BaseGraph::Edge_handle, CubicBezierCurve::CurvePoint>> m_shiftNearest;
+    std::optional<BaseGraph::Vertex_handle> m_altNearest;
+
     void loadInput(const std::filesystem::path& path);
     void repaintVoronoi();
     void addIOTab();
@@ -252,7 +339,11 @@ class BezierSimplificationDemo : public QMainWindow {
     void updateComplexityInfo();
     void resetEdits();
     void checkIntersections();
+    void updateEditables();
     double getScale() const;
+
+    void keyPressEvent(QKeyEvent *event) override;
+    void keyReleaseEvent(QKeyEvent *event) override;
 
   public:
 	BezierSimplificationDemo();

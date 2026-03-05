@@ -1,11 +1,9 @@
 set(SOURCES
     frontend.cpp
-    read_ipe_bezier_spline.cpp
 )
 
 set(HEADERS
     frontend.h
-    read_ipe_bezier_spline.h
 )
 
 set(CMAKE_AUTOMOC ON)

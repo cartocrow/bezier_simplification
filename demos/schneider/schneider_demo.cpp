@@ -4,7 +4,7 @@
 #include <QDockWidget>
 #include <QVBoxLayout>
 
-#include "frontend/read_ipe_bezier_spline.h"
+#include "library/read_ipe_bezier_spline.h"
 
 SchneiderDemo::SchneiderDemo() {
     setWindowTitle("Demo for Schneider's algorithm to fit Béziers");

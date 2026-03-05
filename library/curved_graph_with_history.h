@@ -16,15 +16,35 @@ struct Operation {
     virtual void redo(Graph& g) = 0;
 };
 
+template <Graph2Like Graph>
+struct OperationBatch {
+    using Op = Operation<Graph>;
+
+    std::vector<std::shared_ptr<Op>> operations;
+
+    void undo(Graph& g) {
+        // NB: reverse
+        for (auto it = operations.rbegin(); it != operations.rend(); it++) {
+            auto& op = *it;
+            op->undo(g);
+        }
+    }
+    void redo(Graph& g) {
+        for (auto& op : operations) {
+            op->redo(g);
+        }
+    }
+};
+
 /// Note: this operation has not been tested.
 template <Graph2Like Graph>
 struct SplitVertexOperation : public Operation<Graph> {
-  public:
+public:
     using Edge_handle = Graph::Edge_handle;
     using Vertex_handle = Graph::Vertex_handle;
     using Op = Operation<Graph>;
     using Curve = Graph::Curve_2;
-    using ED = Graph::ED;
+    using ED = Graph::Edge_data;
     using Operation<Graph>::m_edge;
 
     Curve m_incomingCurve;
@@ -39,7 +59,7 @@ struct SplitVertexOperation : public Operation<Graph> {
     ED m_e1Data;
     ED m_e2Data;
 
-  public:
+public:
     SplitVertexOperation(Vertex_handle v, Curve c0, Curve c1, Curve c2) :
         Operation<Graph>(v->incoming()), m_c0(std::move(c0)), m_c1(std::move(c1)), m_c2(std::move(c2)),
         m_incomingCurve(v->incoming()->curve()), m_outgoingCurve(v->outgoing()->curve()) {
@@ -108,6 +128,87 @@ struct SplitVertexOperation : public Operation<Graph> {
         if (m_e2Data.futr != nullptr) {
             m_e2Data.futr->m_edge = e2;
         }
+
+        return m_edge;
+    }
+    void redo(Graph& g) {
+        perform(g);
+    }
+};
+template <Graph2Like Graph>
+struct ReplaceCurveOperation : public Operation<Graph> {
+public:
+    using Edge_handle = Graph::Edge_handle;
+    using Vertex_handle = Graph::Vertex_handle;
+    using Op = Operation<Graph>;
+    using Curve = Graph::Curve_2;
+    using ED = Graph::Edge_data;
+    using Operation<Graph>::m_edge;
+
+    Curve m_oldCurve;
+    Curve m_newCurve;
+
+    ED m_oldData;
+    ED m_newData;
+public:
+    ReplaceCurveOperation(Edge_handle e, Curve c) :
+        Operation<Graph>(e), m_newCurve(c), m_oldCurve(m_edge->curve()) {
+        m_newData = m_edge->data();
+    }
+    void undo(Graph& g) {
+        auto thisOp = m_edge->data().hist;
+
+        m_newData = m_edge->data();
+        m_edge->curve() = m_oldCurve;
+        m_edge->data() = m_oldData;
+
+        m_edge->data().futr = thisOp;
+    }
+    Edge_handle perform(Graph& g) {
+        m_oldData = m_edge->data();
+        m_edge->curve() = m_newCurve;
+        m_edge->data() = m_newData;
+
+        return m_edge;
+    }
+    void redo(Graph& g) {
+        perform(g);
+    }
+};
+template <Graph2Like Graph>
+struct MoveVertexOperation : public Operation<Graph> {
+public:
+    using Edge_handle = Graph::Edge_handle;
+    using Vertex_handle = Graph::Vertex_handle;
+    using Op = Operation<Graph>;
+    using Curve = Graph::Curve_2;
+    using ED = Graph::Edge_data;
+    using Operation<Graph>::m_edge;
+    using Point = Graph::Point_2;
+
+    ED m_oldData;
+    ED m_newData;
+    Point m_newPoint;
+    Point m_oldPoint;
+public:
+    MoveVertexOperation(Vertex_handle v, Point p) :
+            Operation<Graph>(v->incoming()), m_newPoint(p) {
+        m_newData = m_edge->data();
+        m_oldPoint = m_edge->target()->point();
+    }
+    void undo(Graph& g) {
+        auto thisOp = m_edge->data().hist;
+
+        m_newData = m_edge->data();
+        m_edge->target()->point() = m_oldPoint;
+        m_edge->data() = m_oldData;
+
+        m_edge->data().futr = thisOp;
+    }
+    Edge_handle perform(Graph& g) {
+        m_oldData = m_edge->data();
+        m_edge->target()->point() = m_newPoint;
+        m_edge->data() = m_newData;
 
         return m_edge;
     }
@@ -214,6 +315,75 @@ public:
 };
 
 template <Graph2Like Graph>
+struct SplitEdgeOperation : public Operation<Graph> {
+public:
+    using Edge_handle = Graph::Edge_handle;
+    using Vertex_handle = Graph::Vertex_handle;
+    using Op = Operation<Graph>;
+    using Curve = Graph::Curve_2;
+    using ED = Graph::Edge_data;
+    using Operation<Graph>::m_edge;
+
+    Curve m_incomingCurve;
+    Curve m_outgoingCurve;
+    Curve m_c;
+
+    ED m_incomingData;
+    ED m_outgoingData;
+    ED m_eData;
+
+public:
+    SplitEdgeOperation(Edge_handle e, Curve incomingCurve, Curve outgoingCurve) :
+            Operation<Graph>(e), m_incomingCurve(incomingCurve), m_outgoingCurve(outgoingCurve),
+            m_c(e->curve()), m_eData(e->data()) {}
+    void undo(Graph& g) {
+        auto out = m_edge->next();
+        auto inc = m_edge;
+        m_incomingData = inc->data();
+        m_outgoingData = out->data();
+
+        auto thisOp = inc->data().hist;
+        m_edge = g.merge_edge_with_prev(out, m_c);
+
+        m_edge->data() = m_eData;
+        m_edge->data().futr = thisOp;
+
+        if (m_eData.hist != nullptr) {
+            m_eData.hist->m_edge = m_edge;
+        }
+        if (m_eData.futr != nullptr) {
+            m_eData.futr->m_edge = m_edge;
+        }
+    }
+    Vertex_handle perform(Graph& g) {
+        auto v = g.subdivide_edge(m_edge, m_incomingCurve, m_outgoingCurve);
+        auto inc = v->incoming();
+        auto out = v->outgoing();
+        m_edge = inc;
+
+        inc->data() = m_incomingData;
+        out->data() = m_outgoingData;
+
+        if (m_incomingData.hist != nullptr) {
+            m_incomingData.hist->m_edge = inc;
+        }
+        if (m_incomingData.futr != nullptr) {
+            m_incomingData.futr->m_edge = inc;
+        }
+        if (m_outgoingData.hist != nullptr) {
+            m_outgoingData.hist->m_edge = out;
+        }
+        if (m_outgoingData.futr != nullptr) {
+            m_outgoingData.futr->m_edge = out;
+        }
+        return v;
+    }
+    void redo(Graph& g) {
+        perform(g);
+    }
+};
+
+template <Graph2Like Graph>
 struct MergeEdgeOperation : public Operation<Graph> {
 public:
     using Edge_handle = Graph::Edge_handle;
@@ -233,8 +403,8 @@ public:
 
 public:
     MergeEdgeOperation(Edge_handle e, Curve replacement) :
-            Operation<Graph>(e), m_replacement(replacement),
-            m_c(e->curve()), m_cPrev(e->prev()->curve()) {
+        Operation<Graph>(e), m_replacement(replacement),
+        m_c(e->curve()), m_cPrev(e->prev()->curve()) {
         m_eData = e->data();
         m_prevData = e->prev()->data();
     }
@@ -288,18 +458,18 @@ template <Graph2Like Graph> struct OperationBatch;
 template <class Graph>
 concept EdgeStoredOperations = requires(typename Graph::Edge_data d) {
     requires(Graph2Like<Graph>);
-    {
+{
     d.hist
-    } -> std::same_as<Operation<Graph>*&>;
-    {
+} -> std::same_as<Operation<Graph>*&>;
+{
     d.futr
-    } -> std::same_as<Operation<Graph>*&>;
+} -> std::same_as<Operation<Graph>*&>;
 };
 }
 
 template <Graph2Like Graph>
 class CollapseHistoryGraphAdaptor {
-  public:
+public:
     using Curve_traits = Graph::Curve_traits;
     using Vertex = Graph::Vertex;
     using Vertex_data = Graph::Vertex_data;
@@ -318,10 +488,15 @@ class CollapseHistoryGraphAdaptor {
     using Curve_2 = Graph::Curve_2;
 
     using BaseGraph = Graph;
+    using Self = CollapseHistoryGraphAdaptor<Graph>;
+
+    using Batch = detail::OperationBatch<Graph>;
 
     Graph& m_graph;
-    std::stack<std::shared_ptr<detail::Operation<Graph>>> m_history;
-    std::stack<std::shared_ptr<detail::Operation<Graph>>> m_undone;
+
+    std::unique_ptr<Batch> m_building_batch = nullptr;
+    std::stack<std::unique_ptr<Batch>> m_history;
+    std::stack<std::unique_ptr<Batch>> m_undone;
 
     CollapseHistoryGraphAdaptor(Graph& graph) : m_graph(graph) {};
 
@@ -349,16 +524,16 @@ class CollapseHistoryGraphAdaptor {
     }
     void backInTime() {
         if (m_history.empty()) return;
-        auto lastOperation = m_history.top();
-        lastOperation->undo(m_graph);
-        m_undone.push(std::move(lastOperation));
+        auto& lastBatch = m_history.top();
+        lastBatch->undo(m_graph);
+        m_undone.push(std::move(lastBatch));
         m_history.pop();
     }
     void forwardInTime() {
         if (m_undone.empty()) return;
-        auto lastOperation = m_undone.top();
-        lastOperation->redo(m_graph);
-        m_history.push(std::move(lastOperation));
+        auto& lastBatch = m_undone.top();
+        lastBatch->redo(m_graph);
+        m_history.push(std::move(lastBatch));
         m_undone.pop();
     }
     void goToPresent() {
@@ -371,8 +546,16 @@ class CollapseHistoryGraphAdaptor {
         m_undone = {};
     }
 
-//    void startBatch(Number<K> c);
-//    void endBatch();
+    void startBatch() {
+        assert(m_building_batch == nullptr);
+        m_building_batch = std::make_unique<Batch>();
+    }
+
+    void endBatch() {
+        assert(m_building_batch != nullptr);
+        m_history.push(std::move(m_building_batch));
+        m_building_batch = nullptr;
+    }
 
     /// Split a vertex into two. Or equivalently, replace two curves by three new ones.
     /// Connect the two new vertices with three new curves.
@@ -380,7 +563,7 @@ class CollapseHistoryGraphAdaptor {
         auto operation = std::make_shared<detail::SplitVertexOperation<Graph>>(v, std::move(c0), std::move(c1), std::move(c2));
         auto e = operation->perform(m_graph);
         e->data().hist = operation;
-        m_history.push(std::move(operation));
+        m_building_batch->operations.push_back(std::move(operation));
         m_undone = {};
         return e;
     }
@@ -391,7 +574,7 @@ class CollapseHistoryGraphAdaptor {
         auto operation = std::make_shared<detail::CollapseEdgeOperation<Graph>>(e, std::move(toNewPoint), std::move(fromNewPoint));
         auto v = operation->perform(m_graph);
         v->incoming()->data().hist = operation;
-        m_history.push(std::move(operation));
+        m_building_batch->operations.push_back(std::move(operation));
         m_undone = {};
         return v;
     }
@@ -402,9 +585,31 @@ class CollapseHistoryGraphAdaptor {
         auto operation = std::make_shared<detail::MergeEdgeOperation<Graph>>(e, newCurve);
         auto eh = operation->perform(m_graph);
         eh->data().hist = operation;
-        m_history.push(std::move(operation));
+        m_building_batch->operations.push_back(std::move(operation));
         m_undone = {};
         return eh;
+    }
+    void replaceCurve(Edge_handle e, Curve_2 newCurve) {
+        auto operation = std::make_shared<detail::ReplaceCurveOperation<Graph>>(e, newCurve);
+        auto eh = operation->perform(m_graph);
+        eh->data().hist = operation;
+        m_building_batch->operations.push_back(std::move(operation));
+        m_undone = {};
+    }
+    void moveVertex(Vertex_handle v, Point_2 newPoint) {
+        auto operation = std::make_shared<detail::MoveVertexOperation<Graph>>(v, newPoint);
+        auto eh = operation->perform(m_graph);
+        eh->data().hist = operation;
+        m_building_batch->operations.push_back(std::move(operation));
+        m_undone = {};
+    }
+    Vertex_handle splitEdge(Edge_handle e, Curve_2 toNewPoint, Curve_2 fromNewPoint) {
+        auto operation = std::make_shared<detail::SplitEdgeOperation<Graph>>(e, std::move(toNewPoint), std::move(fromNewPoint));
+        auto v = operation->perform(m_graph);
+        v->incoming()->data().hist = operation;
+        m_building_batch->operations.push_back(std::move(operation));
+        m_undone = {};
+        return v;
     }
 };
 static_assert(Graph2Like<CollapseHistoryGraphAdaptor<Bezier_graph_2<std::monostate, std::monostate>>>);
