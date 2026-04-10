@@ -30,8 +30,9 @@ std::vector<CubicBezierSpline> splinesInPage(ipe::Page* page) {
 		auto shape = path->shape();
 		for (int j = 0; j < shape.countSubPaths(); j++) {
 			auto subpath = shape.subPath(j);
-			if (subpath->type() != ipe::SubPath::Type::ECurve) continue;
-			splines.emplace_back(convertPathToSpline(*subpath, matrix));
+            if (subpath->type() == ipe::SubPath::Type::ECurve || subpath->type() == ipe::SubPath::Type::EClosedSpline) {
+                splines.emplace_back(convertPathToSpline(*subpath, matrix));
+            }
 		}
 	}
 

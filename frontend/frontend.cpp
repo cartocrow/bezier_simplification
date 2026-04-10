@@ -481,6 +481,7 @@ void BezierSimplificationDemo::addIOTab() {
 
     connect(checkIntersectionsButton, &QPushButton::clicked, [this]() {
         checkIntersections();
+        m_renderer->repaint();
     });
 
     connect(exportButton, &QPushButton::clicked, [this, stackPolygons]() {
@@ -521,7 +522,7 @@ void BezierSimplificationDemo::addIOTab() {
         double minDist = std::numeric_limits<double>::infinity();
 
         for (const auto& editable : m_editables) {
-            auto diff = m_renderer->convertPoint(editable->point()) - m_renderer->convertPoint(p.transform(m_transform));
+            auto diff = m_renderer->convertPoint(editable->point().transform(m_transform.inverse())) - m_renderer->convertPoint(p);
             auto d2 = diff.x() * diff.x() + diff.y() * diff.y();
             if (d2 < 400 && d2 < minDist) {
                 minDist = d2;
@@ -941,6 +942,8 @@ void BezierSimplificationDemo::addDrawingTab() {
         } else {
             m_transform = m_backupTransform;
         }
+        m_graphPainting->m_drawSettings.m_trans = m_transform;
+        m_editGraphPainting->m_drawSettings.m_trans = m_transform;
 
         m_minDist->setMaximum(getScale() * 30);
         m_minAdjDist->setMaximum(getScale() * 30);
@@ -1206,14 +1209,15 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
     addMinimumDistanceTab();
     addDrawingTab();
 
-	loadInput("splines.ipe");
-
     connect(m_renderer, &GeometryWidget::clicked, [this](Point<Inexact> pt) {
         if (m_shiftDown && m_shiftNearest.has_value()) {
             auto& [e, cp] = *m_shiftNearest;
             auto [toPoint, fromPoint] = e->curve().split(cp.t);
+            auto edgeData = e->data();
             m_editGraph.startBatch();
             auto v = m_editGraph.splitEdge(e, toPoint, fromPoint);
+            v->incoming()->data().index = edgeData.index;
+            v->outgoing()->data().index = edgeData.index;
             m_editGraph.endBatch();
 
             m_shiftNearest = std::nullopt;
@@ -1281,7 +1285,9 @@ void BezierSimplificationDemo::checkIntersections() {
 
     auto inv = m_transform.inverse();
 
-    for (auto eit = m_baseGraph.edges_begin(); eit != m_baseGraph.edges_end(); ++eit) {
+    auto& theBaseGraph = m_editBaseGraph.number_of_edges() > 0 ? m_editBaseGraph : m_baseGraph;
+
+    for (auto eit = theBaseGraph.edges_begin(); eit != theBaseGraph.edges_end(); ++eit) {
         if (eit->curve().selfIntersects()) {
             std::cout << "Found self-intersection!" << std::endl;
             r.draw(eit->curve().transform(inv));
@@ -1289,7 +1295,7 @@ void BezierSimplificationDemo::checkIntersections() {
         bcqt.insert(eit);
     }
 
-    for (auto eit = m_baseGraph.edges_begin(); eit != m_baseGraph.edges_end(); ++eit) {
+    for (auto eit = theBaseGraph.edges_begin(); eit != theBaseGraph.edges_end(); ++eit) {
         auto box = eit->curve().bbox();
         Rectangle<Exact> rect(box.xmin(), box.ymin(), box.xmax(), box.ymax());
         bcqt.findOverlapped(rect, [&](const BaseGraph::Edge_handle& other) {
