@@ -838,7 +838,8 @@ void BezierSimplificationDemo::addMinimumDistanceTab() {
     });
 
     connect(mdInitializeButton, &QPushButton::clicked, [this]() {
-        m_forcer.m_g = approximateBezierGraph(m_baseGraph, std::min(20.0, 1000000.0 / m_baseGraph.number_of_edges()));
+        auto& theBaseGraph = m_editBaseGraph.number_of_edges() > 0 ? m_editBaseGraph : m_baseGraph;
+        m_forcer.m_g = approximateBezierGraph(theBaseGraph, std::min(20.0, 1000000.0 / theBaseGraph.number_of_edges()));
         m_forcer.initialize();
 
         repaintVoronoi();
