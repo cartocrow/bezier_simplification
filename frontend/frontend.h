@@ -208,6 +208,7 @@ public:
 
     void paint(GeometryRenderer& renderer) const override {
         const auto& m_trans = m_drawSettings.m_trans;
+
         const auto& m_showVertices = m_drawSettings.m_showVertices;
         const auto& m_showEdgeDirection = m_drawSettings.m_showEdgeDirection;
         const auto& m_showControlPoints = m_drawSettings.m_showControlPoints;

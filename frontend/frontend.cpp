@@ -17,6 +17,7 @@
 
 #include "library/read_graph_gdal.h"
 #include "library/read_ipe_bezier_spline.h"
+#include "library/vertex_snap.h"
 
 #include <cartocrow/renderer/voronoi_drawer.h>
 #include <cartocrow/core/transform_helpers.h>
@@ -130,27 +131,23 @@ void BezierSimplificationDemo::loadInput(const std::filesystem::path& path) {
     } else {
         auto [regionSet, spatialRef] = readRegionSetUsingGDAL(path);
         m_spatialRef = spatialRef;
-        m_toposet = TopoSet<Inexact>(regionSet);
 
-        std::vector<Point<Inexact>> points;
-        for (const auto& arc : m_toposet.arcs) {
-            std::copy(arc.vertices_begin(), arc.vertices_end(), std::back_inserter(points));
-        }
-
-        auto bbox = CGAL::bbox_2(points.begin(), points.end());
-
-        m_transform = fitInto(bbox, Rectangle<Inexact>(0, 0, 1000, 1000));
+        m_transform = fitInto(regionSet.bbox(), Rectangle<Inexact>(0, 0, 1000, 1000));
         m_graphPainting->m_drawSettings.m_trans = m_transform.inverse();
         m_editGraphPainting->m_drawSettings.m_trans = m_transform.inverse();
 
-        auto rectT = Rectangle<Inexact>(bbox).transform(m_transform);
-        auto bboxT = Box(rectT.xmin(), rectT.ymin(), rectT.xmax(), rectT.ymax());
+        regionSet = regionSet.transform(m_transform);
+
+        snapVertices(regionSet);
+        m_toposet = TopoSet<Inexact>(regionSet);
+
+        auto bboxT = regionSet.bbox();
 
         for (int i = 0; i < m_toposet.arcs.size(); ++i) {
             auto& arc = m_toposet.arcs[i];
             for (auto eit = arc.edges_begin(); eit != arc.edges_end(); ++eit) {
-                auto sourceV = getVertex(m_transform.transform(eit->source()));
-                auto targetV = getVertex(m_transform.transform(eit->target()));
+                auto sourceV = getVertex(eit->source());
+                auto targetV = getVertex(eit->target());
                 auto curve = CubicBezierCurve(sourceV->point(), targetV->point());
 
                 // There should be no duplicates but there are somehow a couple, so we do this for now...
@@ -475,8 +472,7 @@ void BezierSimplificationDemo::addIOTab() {
         if (filePath == "") return;
         auto regionSet = readRegionSetUsingGDAL(filePath);
         std::vector<PolygonWithHoles<Inexact>> pgns;
-        regionSet.first[0].geometry.polygons_with_holes(std::back_inserter(pgns));
-        m_referencePolygon = pgns[0].bbox();
+        m_referencePolygon = regionSet.first.regions[0].geometry.polygons_with_holes[0].bbox();
     });
 
     connect(checkIntersectionsButton, &QPushButton::clicked, [this]() {
@@ -942,8 +938,8 @@ void BezierSimplificationDemo::addDrawingTab() {
         } else {
             m_transform = m_backupTransform;
         }
-        m_graphPainting->m_drawSettings.m_trans = m_transform;
-        m_editGraphPainting->m_drawSettings.m_trans = m_transform;
+        m_graphPainting->m_drawSettings.m_trans = m_transform.inverse();
+        m_editGraphPainting->m_drawSettings.m_trans = m_transform.inverse();
 
         m_minDist->setMaximum(getScale() * 30);
         m_minAdjDist->setMaximum(getScale() * 30);

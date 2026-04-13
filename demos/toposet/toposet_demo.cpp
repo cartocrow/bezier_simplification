@@ -19,27 +19,27 @@ int main(int argc, char* argv[]) {
 
 TopoSetDemo::TopoSetDemo() {
     RegionSet<Inexact> regionSet;
-    PolygonSet<Inexact> polygonSet1;
+    PolygonSetRaw<Inexact> polygonSet1;
 //    PolygonSet<Inexact> polygonSet2;
     Polygon<Inexact> polygon1;
     polygon1.push_back({0, 0});
     polygon1.push_back({1, 0});
     polygon1.push_back({1, 1});
     polygon1.push_back({0, 1});
-    polygonSet1.insert(polygon1);
+    polygonSet1.polygons_with_holes.emplace_back(polygon1);
 //    Polygon<Inexact> polygon2;
 //    polygon2.push_back({-1, 0});
 //    polygon2.push_back({0, 0});
 //    polygon2.push_back({0, 1});
 //    polygon2.push_back({-1, 1});
-//    polygonSet2.insert(polygon2);
+//    polygonSet2Raw.insert(polygon2);
     Polygon<Inexact> polygon3;
     polygon3.push_back({-5, 5});
     polygon3.push_back({-4, 5});
     polygon3.push_back({-4, 6});
     polygon3.push_back({-5, 6});
-    PolygonSet<Inexact> polygonSet3;
-    polygonSet3.insert(polygon3);
+    PolygonSetRaw<Inexact> polygonSet3;
+    polygonSet3.polygons_with_holes.emplace_back(polygon3);
     Polygon<Inexact> polygon4;
     polygon4.push_back({-2, -2});
     polygon4.push_back({2, -2});
@@ -50,11 +50,11 @@ TopoSetDemo::TopoSetDemo() {
     auto hole = polygon1;
     hole.reverse_orientation();
     withHoles.add_hole(hole);
-    polygonSet3.insert(withHoles);
+    polygonSet3.polygons_with_holes.emplace_back(withHoles);
 
-    regionSet.push_back(Region<Inexact>({}, polygonSet1));
+    regionSet.regions.push_back(Region<Inexact>({}, polygonSet1));
 //    regionSet.push_back(Region<Inexact>({}, polygonSet2));
-    regionSet.push_back(Region<Inexact>({}, polygonSet3));
+    regionSet.regions.push_back(Region<Inexact>({}, polygonSet3));
     TopoSet<Inexact> topoSet(regionSet);
 
     setWindowTitle("TopoSet demo");

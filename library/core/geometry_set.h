@@ -15,7 +15,7 @@ overloaded(Ts...) -> overloaded<Ts...>;
 
 template<class K>
 struct GeometrySet {
-    using Geometry = std::variant<PolygonSet<K>, PolygonWithHoles<K>, Polygon<K>, PolylineSet<K>, Polyline<K>>;
+    using Geometry = std::variant<PolygonSetRaw<K>, PolygonWithHoles<K>, Polygon<K>, PolylineSet<K>, Polyline<K>>;
     std::vector<Geometry> geometries;
 
     GeometrySet<K> transform(const CGAL::Aff_transformation_2<K>& trans) {
@@ -26,8 +26,8 @@ struct GeometrySet {
                     [&](const PolygonWithHoles<K>& pwh) -> Geometry {
                         return cartocrow::transform(trans, pwh);
                     },
-                    [&](const PolygonSet<K>& ps) -> Geometry {
-                        return cartocrow::transform(trans, ps);
+                    [&](const PolygonSetRaw<K>& ps) -> Geometry {
+                        return ps.transform(trans);
                     },
                     [&](const Polygon<K>& p) -> Geometry {
                         return CGAL::transform(trans, p);

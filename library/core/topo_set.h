@@ -76,9 +76,8 @@ struct TopoSet {
         // Structure as in https://bost.ocks.org/mike/topology/.
         // 1. Extract.
 
-        for (const auto& region : regionSet) {
-            std::vector<PolygonWithHoles<K>> pgns;
-            region.geometry.polygons_with_holes(std::back_inserter(pgns));
+        for (const auto& region : regionSet.regions) {
+            const std::vector<PolygonWithHoles<K>>& pgns = region.geometry.polygons_with_holes;
 
 
             features.emplace_back(PolygonSetGeometry{}, region.attributes);

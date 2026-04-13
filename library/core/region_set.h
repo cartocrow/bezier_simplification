@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cartocrow/core/core.h>
+#include <cartocrow/core/polygon_set_raw.h>
 
 namespace cartocrow {
 using RegionAttribute = std::variant<int, std::vector<int>, double, std::vector<double>, std::string, std::vector<std::string>, int64_t>;
@@ -24,9 +25,29 @@ using RegionAttributes = std::unordered_map<std::string, RegionAttribute>;
 template <class K>
 struct Region {
     RegionAttributes attributes;
-    PolygonSet<K> geometry;
+    PolygonSetRaw<K> geometry;
 };
 
 template <class K>
-using RegionSet = std::vector<Region<K>>;
+struct RegionSet {
+    std::vector<Region<K>> regions;
+
+    RegionSet() = default;
+
+    Box bbox() const {
+        std::vector<PolygonSetRaw<K>> geometries;
+        for (const auto& region : regions) {
+            geometries.push_back(region.geometry);
+        }
+        return CGAL::bbox_2(geometries.begin(), geometries.end());
+    }
+
+    RegionSet<K> transform(const CGAL::Aff_transformation_2<K>& trans) const {
+        RegionSet<K> transformed;
+        for (const auto& region : regions) {
+            transformed.regions.emplace_back(region.attributes, region.geometry.transform(trans));
+        }
+        return transformed;
+    }
+};
 }

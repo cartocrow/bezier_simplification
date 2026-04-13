@@ -6,9 +6,9 @@
 
 #include <cartocrow/core/arrangement_helpers.h>
 
-#define DEBUG 1
+#define DEBUG_COLLAPSE 0
 
-#if DEBUG
+#if DEBUG_COLLAPSE
 #include <cartocrow/renderer/ipe_renderer.h>
 #endif
 
@@ -30,7 +30,7 @@ template <typename BG> struct StevenBCTraits {
 	int nSegs;
     int symDiffSegs;
 	bool debug;
-#if DEBUG
+#if DEBUG_COLLAPSE
     renderer::IpeRenderer ipeRenderer;
 #endif
 
@@ -77,7 +77,7 @@ private:
                 }
             }
 
-#if DEBUG
+#if DEBUG_COLLAPSE
 //            ipeRenderer.addPainting([p0, t0, p3, t1, d0, d1](renderer::GeometryRenderer& renderer) {
 //                renderer.setMode(renderer::GeometryRenderer::stroke);
 //                renderer.setStroke(Color(0, 0, 0), 1.0);
@@ -162,6 +162,7 @@ private:
                 std::swap(option1, option2);
             }
 
+#if DEBUG_COLLAPSE
             if (debug) {
                 ipeRenderer.addPainting([option1, s1, option2, s2, l, currentControl, spline](renderer::GeometryRenderer &renderer) {
                     renderer.setMode(renderer::GeometryRenderer::stroke);
@@ -178,11 +179,13 @@ private:
                 }, "Candidate spline");
                 ipeRenderer.nextPage();
             }
+#endif
 
             if (debug) {
                 std::cout << "Tried control points: " << option1 << "  and  " << option2 << std::endl;
                 std::cout << "Splines have area: " << a1 << "  and  " << a2 << std::endl;
             }
+
 
             std::tuple<Point<Inexact>, CubicBezierSpline, double> lower, upper;
             if (a1 <= targetArea && targetArea <= a2) {
@@ -219,6 +222,7 @@ private:
                         a1 = candidateArea;
                         option1 = candidateControl;
 
+#if DEBUG_COLLAPSE
                         if (debug) {
                             ipeRenderer.addPainting([candidateSpline, option1, currentControl, candidateControl](renderer::GeometryRenderer &renderer) {
                                 renderer.setMode(renderer::GeometryRenderer::stroke);
@@ -233,11 +237,13 @@ private:
                             }, "Candidate spline");
                             ipeRenderer.nextPage();
                         }
+#endif
 
                         candidateControl = option1 + 2 * (option1 - currentControl);
                         std::tie(candidateSpline, candidateArea) = splineAndArea(candidateControl);
                         --remainingIterations;
                     }
+#if DEBUG_COLLAPSE
                     if (debug) {
                         ipeRenderer.addPainting([candidateSpline](renderer::GeometryRenderer &renderer) {
                             renderer.setMode(renderer::GeometryRenderer::stroke);
@@ -246,6 +252,7 @@ private:
                         }, "Candidate spline");
                         ipeRenderer.nextPage();
                     }
+#endif
                     if (targetArea < candidateArea) {
                         return std::nullopt;
                     }
@@ -272,6 +279,7 @@ private:
                         a2 = candidateArea;
                         option2 = candidateControl;
 
+#if DEBUG_COLLAPSE
                         if (debug) {
                             ipeRenderer.addPainting([candidateSpline, option2, currentControl, candidateControl](renderer::GeometryRenderer &renderer) {
                                 renderer.setMode(renderer::GeometryRenderer::stroke);
@@ -286,11 +294,13 @@ private:
                             }, "Candidate spline");
                             ipeRenderer.nextPage();
                         }
+#endif
 
                         candidateControl = option2 + 2 * (option2 - currentControl);
                         std::tie(candidateSpline, candidateArea) = splineAndArea(candidateControl);
                         --remainingIterations;
                     }
+#if DEBUG_COLLAPSE
                     if (debug) {
                         ipeRenderer.addPainting([candidateSpline](renderer::GeometryRenderer &renderer) {
                             renderer.setMode(renderer::GeometryRenderer::stroke);
@@ -299,6 +309,7 @@ private:
                         }, "Candidate spline");
                         ipeRenderer.nextPage();
                     }
+#endif
                     if (targetArea > candidateArea) {
                         return std::nullopt;
                     }
@@ -320,6 +331,7 @@ private:
                 auto &[lowerC, lowerS, lowerA] = lower;
                 auto &[upperC, upperS, upperA] = upper;
 
+#if DEBUG_COLLAPSE
                 if (debug) {
                     ipeRenderer.addPainting([lowerS, upperS](renderer::GeometryRenderer &renderer) {
                         renderer.setMode(renderer::GeometryRenderer::stroke);
@@ -330,6 +342,7 @@ private:
                     }, "Candidate spline");
                     ipeRenderer.nextPage();
                 }
+#endif
 
                 auto cutControl = CGAL::midpoint(lowerC, upperC);
                 auto [cutSpline, cutArea] = splineAndArea(cutControl);
@@ -378,7 +391,7 @@ private:
 
         if (!c1_maybe.has_value()) return std::nullopt;
 
-#if DEBUG
+#if DEBUG_COLLAPSE
         if (debug) {
             std::cout << "a0: " << a0 << " a1: " << a1 << std::endl;
 
@@ -482,7 +495,7 @@ private:
 
 public:
     void determineCollapse(typename BG::Edge_handle e) {
-#if DEBUG
+#if DEBUG_COLLAPSE
         if (debug) {
             ipeRenderer = renderer::IpeRenderer();
         }
@@ -591,7 +604,7 @@ public:
                 best = afterSpline;
             }
 
-#if DEBUG
+#if DEBUG_COLLAPSE
             if (debug) {
                 ipeRenderer.addPainting([beforeSpline](renderer::GeometryRenderer& renderer) {
                     renderer.setMode(renderer::GeometryRenderer::vertices | renderer::GeometryRenderer::stroke);
@@ -675,7 +688,7 @@ public:
             evaluate(*spiroResult);
         }
 
-#if DEBUG
+#if DEBUG_COLLAPSE
         if (debug) {
             ipeRenderer.save("debugging.ipe");
         }

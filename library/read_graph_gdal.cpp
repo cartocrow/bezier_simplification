@@ -110,9 +110,8 @@ Straight_graph_2<std::monostate, std::monostate, Inexact> readGraphUsingGDAL(con
         }
     };
 
-    auto insertPolygonSet = [&](const PolygonSet<Inexact>& polygonSet) {
-        std::vector<PolygonWithHoles<Inexact>> pgnsWithHoles;
-        polygonSet.polygons_with_holes(std::back_inserter(pgnsWithHoles));
+    auto insertPolygonSet = [&](const PolygonSetRaw<Inexact>& polygonSet) {
+        const std::vector<PolygonWithHoles<Inexact>>& pgnsWithHoles = polygonSet.polygons_with_holes;
         for (const auto& pgnWithHoles : pgnsWithHoles) {
             insertPolygonWithHoles(pgnWithHoles);
         }
@@ -125,12 +124,12 @@ Straight_graph_2<std::monostate, std::monostate, Inexact> readGraphUsingGDAL(con
         switch(wkbFlatten(poGeometry->getGeometryType())) {
             case wkbMultiPolygon: {
                 OGRMultiPolygon *poMultiPolygon = poGeometry->toMultiPolygon();
-                insertPolygonSet(approximate(ogrMultiPolygonToPolygonSet(*poMultiPolygon)));
+                insertPolygonSet(ogrMultiPolygonToPolygonSetRaw(*poMultiPolygon));
                 break;
             }
             case wkbPolygon: {
                 OGRPolygon* poly = poGeometry->toPolygon();
-                insertPolygonWithHoles(approximate(ogrPolygonToPolygonWithHoles(*poly)));
+                insertPolygonWithHoles(ogrPolygonToPolygonWithHoles(*poly));
                 break;
             }
 //            case wkbLineString: {
@@ -163,11 +162,11 @@ std::pair<RegionSet<Inexact>, OGRSpatialReference> readRegionSetUsingGDAL(const 
 
         poGeometry = poFeature->GetGeometryRef();
 
-        PolygonSet<Inexact> polygonSet;
+        PolygonSetRaw<Inexact> polygonSet;
         switch(wkbFlatten(poGeometry->getGeometryType())) {
             case wkbMultiPolygon: {
                 OGRMultiPolygon *poMultiPolygon = poGeometry->toMultiPolygon();
-                polygonSet = approximate(ogrMultiPolygonToPolygonSet(*poMultiPolygon));
+                polygonSet = ogrMultiPolygonToPolygonSetRaw(*poMultiPolygon);
                 break;
             }
             case wkbPolygon: {
@@ -179,7 +178,7 @@ std::pair<RegionSet<Inexact>, OGRSpatialReference> readRegionSetUsingGDAL(const 
 //                        std::cout << pt.getX() << ", " << pt.getY() << std::endl;
 //                    }
 //                }
-                polygonSet = approximate(ogrPolygonToPolygonSet(*poly));
+                polygonSet = ogrPolygonToPolygonSetRaw(*poly);
                 break;
             }
             default: std::cout << "Did not handle this type of geometry: " << poGeometry->getGeometryName() << std::endl;
@@ -208,7 +207,7 @@ std::pair<RegionSet<Inexact>, OGRSpatialReference> readRegionSetUsingGDAL(const 
             ++i;
         }
 
-        regionSet.push_back(region);
+        regionSet.regions.push_back(region);
     }
 
     return {regionSet, *poLayer->GetSpatialRef()};
@@ -410,27 +409,27 @@ GeometrySet<Inexact> readGeometrySetUsingGDAL(const std::filesystem::path& path)
         switch (wkbFlatten(poGeometry->getGeometryType())) {
             case wkbMultiPolygon: {
                 OGRMultiPolygon *poMultiPolygon = poGeometry->toMultiPolygon();
-                geometrySet.geometries.push_back(approximate(ogrMultiPolygonToPolygonSet(*poMultiPolygon)));
+                geometrySet.geometries.push_back(ogrMultiPolygonToPolygonSetRaw(*poMultiPolygon));
                 break;
             }
             case wkbPolygon: {
                 OGRPolygon *poly = poGeometry->toPolygon();
-                geometrySet.geometries.push_back(approximate(ogrPolygonToPolygonWithHoles(*poly)));
+                geometrySet.geometries.push_back(ogrPolygonToPolygonWithHoles(*poly));
                 break;
             }
             case wkbLinearRing: {
                 OGRLinearRing *poly = poGeometry->toLinearRing();
-                geometrySet.geometries.push_back(approximate(ogrLinearRingToPolygon(*poly)));
+                geometrySet.geometries.push_back(ogrLinearRingToPolygon(*poly));
                 break;
             }
             case wkbLineString: {
                 OGRLineString *pl = poGeometry->toLineString();
-                geometrySet.geometries.push_back(approximate(ogrLineStringToPolyline(*pl)));
+                geometrySet.geometries.push_back(ogrLineStringToPolyline(*pl));
                 break;
             }
             case wkbMultiLineString: {
                 OGRMultiLineString *pl = poGeometry->toMultiLineString();
-                geometrySet.geometries.push_back(approximate(PolylineSet<Exact>{ogrMultiLineStringToMultiPolyline(*pl)}));
+                geometrySet.geometries.push_back(ogrMultiLineStringToPolylineSet(*pl));
                 break;
             }
             default: std::cout << "Did not handle this type of geometry: " << poGeometry->getGeometryName() << std::endl;
