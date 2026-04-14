@@ -156,10 +156,12 @@ void BezierSimplificationDemo::loadInput(const std::filesystem::path& path) {
                 for (auto ieit = targetV->incident_edges_begin(); ieit != targetV->incident_edges_end(); ++ieit) {
                     if ((*ieit)->target() == sourceV && (*ieit)->curve() == curve.reversed()) {
                         oppositeExists = true;
+                        std::cout << "Found an opposite edge!" << std::endl;
                         break;
                     }
                     if ((*ieit)->source() == sourceV && (*ieit)->curve() == curve) {
                         alreadyExists = true;
+                        std::cout << "Found a duplicate edge!" << std::endl;
                         break;
                     }
                 }
@@ -192,9 +194,11 @@ void BezierSimplificationDemo::loadInput(const std::filesystem::path& path) {
     m_minDist->setMaximum(getScale() * 30);
     m_minAdjDist->setMaximum(getScale() * 30);
     m_minComponentLength->setMaximum(getScale() * 100);
+    m_minCrumbArea->setMaximum(getScale() * 100);
     m_minDist->setValue(getScale() / prevScale * m_minDist->value());
     m_minAdjDist->setValue(getScale() / prevScale * m_minAdjDist->value());
     m_minComponentLength->setValue(getScale() / prevScale * m_minComponentLength->value());
+    m_minCrumbArea->setValue(getScale() / prevScale * m_minCrumbArea->value());
     updateComplexityInfo();
 }
 
@@ -734,8 +738,8 @@ void BezierSimplificationDemo::addMinimumDistanceTab() {
     vLayout->addWidget(minAngleLabel);
     m_minAngle = new DoubleSlider(Qt::Horizontal);
     m_minAngle->setMinimum(0);
-    m_minAngle->setMaximum(std::numbers::pi);
-    m_minAngle->setValue(std::numbers::pi / 3);
+    m_minAngle->setMaximum(std::numbers::pi / 2);
+    m_minAngle->setValue(std::numbers::pi / 4);
     m_forcer.m_minAngle = m_minAngle->value();
     vLayout->addWidget(m_minAngle);
 
@@ -787,6 +791,19 @@ void BezierSimplificationDemo::addMinimumDistanceTab() {
     m_minComponentLength->setValue(0);
     m_forcer.m_requiredLength = m_minComponentLength->value();
 
+    auto* minCrumbAreaLabel = new QLabel("Minimum crumb area");
+    vLayout->addWidget(minCrumbAreaLabel);
+    auto* minCrumbArea = new DoubleSlider(Qt::Horizontal);
+    auto* minCrumbAreaSpinBox = new QDoubleSpinBox();
+    minCrumbAreaSpinBox->setSuffix(" km2");
+    vLayout->addWidget(minCrumbAreaSpinBox);
+    vLayout->addWidget(minCrumbArea);
+
+    m_minCrumbArea = std::make_unique<DoubleSliderSpinBox>(minCrumbArea, minCrumbAreaSpinBox);
+    m_minCrumbArea->setMinimum(0);
+    m_minCrumbArea->setMaximum(getScale() * 100);
+    m_minCrumbArea->setValue(0);
+
     auto* mdInitializeButton = new QPushButton("Initialize / reset");
     vLayout->addWidget(mdInitializeButton);
     auto* mdStepButton = new QPushButton("Step");
@@ -830,6 +847,13 @@ void BezierSimplificationDemo::addMinimumDistanceTab() {
 
     connect(&*m_minComponentLength, &DoubleSliderSpinBox::valueChanged, [this](double v) {
         m_forcer.m_requiredLength = v / getScale();
+        repaintVoronoi();
+        m_renderer->repaint();
+    });
+
+    connect(&*m_minCrumbArea, &DoubleSliderSpinBox::valueChanged, [this](double v) {
+        m_forcer.m_minLoopArea = v / getScale() * 1E6 / getScale();
+        m_forcer.initialize();
         repaintVoronoi();
         m_renderer->repaint();
     });
@@ -894,6 +918,8 @@ void BezierSimplificationDemo::addDrawingTab() {
     vLayout->addWidget(showNewVertices);
     auto showNewControlPoints = new QCheckBox("Show new control points");
     vLayout->addWidget(showNewControlPoints);
+    auto showArcIndex = new QCheckBox("Show arc index");
+    vLayout->addWidget(showArcIndex);
     m_showDebugInfo = new QCheckBox("Show debug info");
     vLayout->addWidget(m_showDebugInfo);
     auto* doTransform = new QCheckBox("Transform to 1000 x 1000");
@@ -910,6 +936,7 @@ void BezierSimplificationDemo::addDrawingTab() {
 
     connect(showEdgeDirection, &QCheckBox::stateChanged, [this](bool v) {
         m_graphPainting->m_drawSettings.m_showEdgeDirection = v;
+        m_editGraphPainting->m_drawSettings.m_showEdgeDirection = v;
         m_renderer->repaint();
     });
     connect(m_showOldVertices, &QCheckBox::stateChanged, [this]() {
@@ -917,10 +944,17 @@ void BezierSimplificationDemo::addDrawingTab() {
     });
     connect(showNewVertices, &QCheckBox::stateChanged, [this](bool v) {
         m_graphPainting->m_drawSettings.m_showVertices = v;
+        m_editGraphPainting->m_drawSettings.m_showVertices = v;
         m_renderer->repaint();
     });
     connect(showNewControlPoints, &QCheckBox::stateChanged, [this](bool v) {
         m_graphPainting->m_drawSettings.m_showControlPoints = v;
+        m_editGraphPainting->m_drawSettings.m_showControlPoints = v;
+        m_renderer->repaint();
+    });
+    connect(showArcIndex, &QCheckBox::stateChanged, [this](bool v) {
+        m_graphPainting->m_drawSettings.m_showArcIndex = v;
+        m_editGraphPainting->m_drawSettings.m_showArcIndex = v;
         m_renderer->repaint();
     });
     connect(m_showDebugInfo, &QCheckBox::stateChanged, [this]() {
@@ -931,6 +965,7 @@ void BezierSimplificationDemo::addDrawingTab() {
         auto minDistOld = m_minDist->value();
         auto minAdjDistOld = m_minAdjDist->value();
         auto minComponentLengthOld = m_minComponentLength->value();
+        auto minCrumbAreaOld = m_minCrumbArea->value();
 
         if (doTransform->isChecked()) {
             m_backupTransform = m_transform;
@@ -944,9 +979,11 @@ void BezierSimplificationDemo::addDrawingTab() {
         m_minDist->setMaximum(getScale() * 30);
         m_minAdjDist->setMaximum(getScale() * 30);
         m_minComponentLength->setMaximum(getScale() * 100);
+        m_minCrumbArea->setMaximum(getScale() * 100);
         m_minDist->setValue(getScale() / prevScale * minDistOld);
         m_minAdjDist->setValue(getScale() / prevScale * minAdjDistOld);
         m_minComponentLength->setValue(getScale() / prevScale * minComponentLengthOld);
+        m_minCrumbArea->setValue(getScale() * prevScale * minCrumbAreaOld);
         repaintVoronoi();
         Rectangle<Inexact> rect = m_baseGraph.bbox();
         auto rectT = rect.transform(m_transform.inverse());
@@ -1017,7 +1054,7 @@ void BezierSimplificationDemo::addPaintings() {
         renderer.setStrokeOpacity(10);
         for (auto eit = m_baseGraph.edges_begin(); eit != m_baseGraph.edges_end(); ++eit) {
             int tSteps = 1000;
-            auto& curve = eit->curve();
+            auto curve = eit->curve().transform(m_transform.inverse());
             for (int tStep = 0; tStep <= tSteps; ++tStep) {
                 double t = static_cast<double>(tStep) / tSteps;
                 auto c = curve.curvature(t);
@@ -1233,8 +1270,10 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
             auto pl = spline.polyline(100);
             std::vector<Point<Inexact>> points(pl.vertices_begin(), pl.vertices_end());
             auto newCurve = fitCurve(points, inc.tangent(0), -out.tangent(1));
+            auto edgeData = vh->outgoing()->data();
             m_editGraph.startBatch();
-            m_editGraph.merge_edge_with_prev(vh->outgoing(), newCurve);
+            auto eh = m_editGraph.merge_edge_with_prev(vh->outgoing(), newCurve);
+            eh->data().index = edgeData.index;
             m_editGraph.endBatch();
 
             m_altNearest = std::nullopt;

@@ -78,6 +78,10 @@ struct TopoSet {
 
         for (const auto& region : regionSet.regions) {
             const std::vector<PolygonWithHoles<K>>& pgns = region.geometry.polygons_with_holes;
+            // todo: debug the difference
+//            std::vector<PolygonWithHoles<K>> pgnsOther;
+//            auto ps = region.geometry.polygonSet();
+//            ps.polygons_with_holes(std::back_inserter(pgnsOther));
 
 
             features.emplace_back(PolygonSetGeometry{}, region.attributes);

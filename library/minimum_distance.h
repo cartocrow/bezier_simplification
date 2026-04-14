@@ -20,6 +20,10 @@
 #include <CGAL/Segment_Delaunay_graph_traits_2.h>
 #include <CGAL/Segment_Delaunay_graph_storage_traits_with_info_2.h>
 
+#include <chrono>
+
+#define DEBUG_MIN_DIST 1
+
 namespace cartocrow::curved_simplification {
 template <class BezierGraph>
 struct ApproximatedBezierGraphVertexData {
@@ -122,7 +126,19 @@ BezierGraph reconstructBezierGraph(const ApproximatedBezierGraph<BezierGraph>& s
                 std::vector<Point<Inexact>> points;
                 points.push_back(eh->source()->point());
 
+                const CubicBezierCurve& ogCurve = ogEdge->curve();
+
                 auto current = eh;
+                Vector<Inexact> t1;
+                if (eh->source()->degree() != 2) {
+                    t1 = ogCurve.tangent(0);
+                } else {
+                    auto v1 = eh->target()->point() - eh->source()->point();
+                    v1 /= sqrt(v1.squared_length());
+                    auto v2 = eh->source()->point() - eh->source()->prev()->point();
+                    v2 /= sqrt(v2.squared_length());
+                    t1 = v1 + v2;
+                }
                 bool changed = current->data().changed;
                 while (!current->target()->data().originalVertex.has_value()) {
                     current = current->next();
@@ -131,9 +147,18 @@ BezierGraph reconstructBezierGraph(const ApproximatedBezierGraph<BezierGraph>& s
                         changed = true;
                     }
                 }
+                Vector<Inexact> t2;
+                if (current->target()->degree() != 2) {
+                    t2 = -ogCurve.tangent(1);
+                } else {
+                    auto v1 = current->source()->point() - current->target()->point();
+                    v1 /= sqrt(v1.squared_length());
+                    auto v2 = current->target()->point() - current->target()->next()->point();
+                    v2 /= sqrt(v2.squared_length());
+                    t2 = v1 + v2;
+                }
                 points.push_back(current->target()->point());
 
-                const CubicBezierCurve& ogCurve = ogEdge->curve();
                 if (!changed) {
                     auto eh = bg.add_edge(vmap[&*vit], otherVertex, ogCurve);
                     eh->data() = ogEdge->data();
@@ -143,13 +168,33 @@ BezierGraph reconstructBezierGraph(const ApproximatedBezierGraph<BezierGraph>& s
                         eh->data() = ogEdge->data();
                         continue;
                     }
-                    auto spline = fitSpline(points, maxSquaredError, ogCurve.tangent(0), -ogCurve.tangent(1), 500);
+
+                    std::vector<Point<Inexact>> subsampled;
+                    for (int i = 0; i < points.size()-1; ++i) {
+                        auto v = points[i+1] - points[i];
+
+                        subsampled.push_back(points[i]);
+                        subsampled.push_back(points[i] + 0.25 * v);
+                        subsampled.push_back(points[i] + 0.5 * v);
+                        subsampled.push_back(points[i] + 0.75 * v);
+                    }
+                    subsampled.push_back(points.back());
+
+                    auto spline = fitSpline(subsampled, maxSquaredError, t1, t2, 500);
 
                     auto lastVertex = vmap[&*vit];
                     for (int i = 0; i < spline.numCurves(); ++i) {
                         auto c = spline.curve(i);
                         auto nextVertex = i == spline.numCurves() - 1 ? otherVertex : bg.insert_vertex(c.target());
-                        auto eh = bg.add_edge(lastVertex, nextVertex, c);
+                        typename BezierGraph::Edge_handle eh;
+                        if (!std::isfinite(c.source().x()) || !std::isfinite(c.source().y()) ||
+                            !std::isfinite(c.sourceControl().x()) || !std::isfinite(c.sourceControl().y()) ||
+                            !std::isfinite(c.targetControl().x()) || !std::isfinite(c.targetControl().y()) ||
+                            !std::isfinite(c.target().x()) || !std::isfinite(c.target().y())) {
+                            eh = bg.add_edge(lastVertex, nextVertex, CubicBezierCurve(lastVertex->point(), nextVertex->point()));
+                        } else {
+                            eh = bg.add_edge(lastVertex, nextVertex, c);
+                        }
                         eh->data() = ogEdge->data();
                         lastVertex = nextVertex;
                     }
@@ -564,11 +609,20 @@ class MinimumDistanceForcer {
     SDG m_delaunay;
     double m_requiredMinDist = 0;
     double m_requiredLength = 0;
+    double m_minLoopArea = 0;
     double m_minAdjDist;
     double m_minAngle;
-    double m_maxMagnitude = 5;
+    double m_averageEdgeLength = 0;
     bool m_ignoreBbox = false;
     StraightGraph& m_g;
+    std::unordered_map<const typename StraightGraph::Edge*, Segment<Inexact>> m_originalSegments;
+    using VertexP = const typename StraightGraph::Vertex*;
+    using EdgeP = const typename StraightGraph::Edge*;
+    using Loop = std::vector<EdgeP>;
+    std::vector<Loop> m_loops;
+    std::unordered_map<EdgeP, Loop*> m_edgeToLoop;
+    std::unordered_map<VertexP, Loop*> m_vertexToLoop;
+
     Box m_bbox;
 
     bool liesOnBbox(const Point<Inexact>& p) {
@@ -626,10 +680,6 @@ class MinimumDistanceForcer {
     }
 
     bool angleSmallerThan(const typename SDG::Vertex::Storage_site_2& p, const typename SDG::Vertex::Storage_site_2& q, double maxAngle) {
-        if (p.is_point() && q.is_point()) {
-            return false;
-        }
-
         auto getVector = [this](const typename SDG::Vertex::Storage_site_2& site) {
             auto siteF = defining_graph_feature(site);
             if (site.is_segment()) {
@@ -641,11 +691,7 @@ class MinimumDistanceForcer {
                 }
                 auto prev = vh->prev();
                 auto next = vh->next();
-                auto prevV = prev->point() - vh->point();
-                auto nextV = next->point() - vh->point();
-                prevV /= sqrt(prevV.squared_length());
-                nextV /= sqrt(nextV.squared_length());
-                return (prevV + nextV).perpendicular(CGAL::CLOCKWISE);
+                return next->point() - prev->point();;
             }
         };
 
@@ -655,10 +701,78 @@ class MinimumDistanceForcer {
 
         auto v = minimumDistanceVector(p.site(), q.site());
 
-        return std::min(std::min(smallestAngleBetween(pv, v),
-                        smallestAngleBetween(qv, v)),
-                        std::min(smallestAngleBetween(pv, -v),
-                        smallestAngleBetween(qv, -v))) < maxAngle;
+        bool tooSmall = std::min(std::min(smallestAngleBetween(pv, v),
+                                          smallestAngleBetween(qv, v)),
+                                 std::min(smallestAngleBetween(pv, -v),
+                                          smallestAngleBetween(qv, -v))) < maxAngle;
+
+#if DEBUG_MIN_DIST
+//        if (!tooSmall) {
+//            using namespace renderer;
+//            IpeRenderer ipeRenderer;
+//            ipeRenderer.addPainting([p, q, pv, qv, tooSmall, v](GeometryRenderer &renderer) {
+//                if (p.is_point()) {
+//                    renderer.draw(Point<Inexact>(p.point()->x(), p.point()->y()));
+//                    renderer.draw(Segment<Inexact>(Point<Inexact>(p.point()->x(), p.point()->y()),
+//                                                   Point<Inexact>(p.point()->x(), p.point()->y()) + v));
+//                }
+//                if (p.is_segment()) {
+//                    auto s = p.source_of_supporting_site();
+//                    auto e = p.target_of_supporting_site();
+//                    renderer.draw(Segment<Inexact>({s->x(), s->y()}, {e->x(), e->y()}));
+//                    renderer.draw(Segment<Inexact>({e->x(), e->y()}, Point<Inexact>{e->x(), e->y()} + v));
+//                }
+//                if (q.is_point()) {
+//                    renderer.draw(Point<Inexact>(q.point()->x(), q.point()->y()));
+//                }
+//                if (q.is_segment()) {
+//                    auto s = q.source_of_supporting_site();
+//                    auto e = q.target_of_supporting_site();
+//                    renderer.draw(Segment<Inexact>({s->x(), s->y()}, {e->x(), e->y()}));
+//                }
+//
+////            renderer.draw(Point<Inexact>{pv.x(), pv.y()});
+////            renderer.draw(Point<Inexact>{qv.x(), qv.y()});
+////            renderer.draw(Point<Inexact>{v.x(), v.y()});
+////                std::stringstream text;
+////                text << "Too small: " << tooSmall;
+////                renderer.drawText({0, 0}, text.str());
+//            });
+//            std::stringstream fn;
+//            using namespace std::chrono;
+//            milliseconds ms = duration_cast<milliseconds>(
+//                    system_clock::now().time_since_epoch()
+//            );
+//            fn << "debug_min_dist_" << ms << ".ipe";
+//            std::cout << fn.str() << std::endl;
+//            ipeRenderer.save(fn.str());
+//        }
+#endif
+
+        return tooSmall;
+    }
+
+    Loop* getLoop(GraphFeature& f) {
+        if (auto vhP = std::get_if<typename StraightGraph::Vertex_handle>(&f)) {
+            if (m_vertexToLoop.contains(&**vhP)) {
+                return m_vertexToLoop.at(&**vhP);
+            }
+        } else if (auto ehP = std::get_if<typename StraightGraph::Edge_handle>(&f)) {
+            if (m_edgeToLoop.contains(&**ehP)) {
+                return m_edgeToLoop.at(&**ehP);
+            }
+        }
+        return nullptr;
+    }
+
+    bool partOfSameSmallLoop(GraphFeature& f, GraphFeature& g) {
+        auto* fl = getLoop(f);
+        auto* fg = getLoop(g);
+
+        if (fl != nullptr && fg != nullptr) {
+            if (fl == fg) return true;
+        }
+        return false;
     }
 
     bool filterVoronoiEdge(const typename SDG::Edge& e) {
@@ -681,6 +795,11 @@ class MinimumDistanceForcer {
         };
         if (m_ignoreBbox && (connectsToBbox(p) || connectsToBbox(q))) return true;
         auto [ps, qs] = defining_storage_sites(e);
+
+        auto pf = defining_graph_feature(ps);
+        auto qf = defining_graph_feature(qs);
+
+        if (partOfSameSmallLoop(pf, qf)) return true;
         if (withinDistanceAlongIsoline(ps, qs, m_minAdjDist) && angleSmallerThan(ps, qs, m_minAngle)) return true;
         return false;
     }
@@ -718,12 +837,66 @@ class MinimumDistanceForcer {
         }
     }
 
+    void computeAverageEdgeLength() {
+        double totalLength = 0;
+        for (auto eit = m_g.edges_begin(); eit != m_g.edges_end(); ++eit) {
+            auto d = CGAL::sqrt(CGAL::squared_distance(eit->source()->point(), eit->target()->point()));
+            totalLength += d;
+        }
+        m_averageEdgeLength = totalLength / m_g.number_of_edges();
+    }
+
+    void identifyLoops() {
+        m_loops.clear();
+        m_edgeToLoop.clear();
+        m_vertexToLoop.clear();
+
+        std::unordered_set<const typename StraightGraph::Edge*> seen;
+
+        for (auto eit = m_g.edges_begin(); eit != m_g.edges_end(); ++eit) {
+            if (seen.contains(&*eit)) continue;
+            auto start = eit;
+            auto current = start;
+
+            std::vector<const typename StraightGraph::Edge*> component;
+            do {
+                seen.insert(&*current);
+                component.push_back(&*current);
+                if (current->target()->degree() != 2) break;
+                current = current->next();
+            } while (current != start);
+            // now either current == start, or there is no next edge because the target vertex has degree != 2
+
+            if (current->target()->degree() == 2) {
+                Polygon<Inexact> polygon;
+                for (auto edgeP : component) {
+                    polygon.push_back(edgeP->source()->point());
+                }
+                if (polygon.area() < m_minLoopArea) {
+                    m_loops.push_back(component);
+                }
+            }
+        }
+
+        for (auto& component : m_loops) {
+            for (auto edgeP: component) {
+                m_edgeToLoop[edgeP] = &m_loops.back();
+                m_vertexToLoop[&*edgeP->source()] = &component;
+            }
+        }
+    }
+
     MinimumDistanceForcer() = default;
 
     MinimumDistanceForcer(StraightGraph& graph, double minDist) : m_g(graph), m_requiredMinDist(minDist) {};
 
     void initialize() {
+        for (auto eit = m_g.edges_begin(); eit != m_g.edges_end(); ++eit) {
+            m_originalSegments[&*eit] = eit->curve();
+        }
         m_bbox = m_g.bbox();
+        computeAverageEdgeLength();
+        identifyLoops();
         recomputeDelaunay();
         recomputeAuxiliary();
     }
@@ -734,7 +907,28 @@ class MinimumDistanceForcer {
         // Iterate over all m_withinDistEdges.
         // Apply a force to the defining sites, its strength proportional to the length of the edge.
 
-        std::vector<std::pair<typename StraightGraph::Vertex_handle, Vector<Inexact>>> forces;
+        // todo map vertices properly once they have indices.
+        std::unordered_map<Point<Inexact>, Vector<Inexact>> forces;
+
+        auto addForce = [&forces, this](typename StraightGraph::Vertex_handle vh, const Vector<Inexact>& force) {
+            if (m_vertexToLoop.contains(&*vh)) {
+                auto loopP = m_vertexToLoop.at(&*vh);
+                auto& loop = *loopP;
+                for (auto eh : loop) {
+                    if (!forces.contains(eh->source()->point())) {
+                        forces[eh->source()->point()] = force / 8;
+                    } else {
+                        forces[eh->source()->point()] += force / 8;
+                    }
+                }
+            } else {
+                if (!forces.contains(vh->point())) {
+                    forces[vh->point()] = force;
+                } else {
+                    forces[vh->point()] += force;
+                }
+            }
+        };
 
         auto repel = [&](const GraphFeature& feature, const Point<Inexact>& repeller, double magnitude) {
             if (auto vhP = std::get_if<typename StraightGraph::Vertex_handle>(&feature)) {
@@ -743,7 +937,7 @@ class MinimumDistanceForcer {
                 force /= CGAL::sqrt(force.squared_length());
                 force *= magnitude;
 
-                forces.emplace_back(vh, force);
+                addForce(vh, force);
             } else if (auto ehP = std::get_if<typename StraightGraph::Edge_handle>(&feature)) {
                 auto& eh = *ehP;
 
@@ -757,12 +951,13 @@ class MinimumDistanceForcer {
                 force /= CGAL::sqrt(force.squared_length());
                 force *= magnitude;
 
-                forces.emplace_back(eh->source(), (1-targetPercentage) * force);
-                forces.emplace_back(eh->target(), targetPercentage * force);
+                addForce(eh->source(), (1-targetPercentage) * force);
+                addForce(eh->target(), targetPercentage * force);
             }
         };
 
-        auto applyForce = [](typename StraightGraph::Vertex_handle vh, const Vector<Inexact>& force) {
+        auto applyForce = [&](typename StraightGraph::Vertex_handle vh, const Vector<Inexact>& force) {
+            if (liesOnBbox(vh->point())) return;
             vh->point() = vh->point() + force;
             for (auto eit = vh->incident_edges_begin(); eit != vh->incident_edges_end(); ++eit) {
                 (*eit)->curve() = {(*eit)->source()->point(), (*eit)->target()->point()};
@@ -779,19 +974,73 @@ class MinimumDistanceForcer {
                 auto [pf, qf] = defining_graph_features(dEdge);
 
                 auto repeller = minDist(m_delaunay, dEdge).second;
-                auto magnitude = length(vEdge) * 0.1 + 0.01;
+                auto magnitude = length(vEdge) * 0.025 + m_averageEdgeLength / 40;
 
                 repel(pf, repeller, magnitude);
                 repel(qf, repeller, magnitude);
             }
         }
 
-        for (auto& [vh, force] : forces) {
-            if (force.squared_length() > m_maxMagnitude * m_maxMagnitude) {
-                force /= sqrt(force.squared_length());
-                force *= m_maxMagnitude;
+        for (auto eit = m_g.edges_begin(); eit != m_g.edges_end(); ++eit) {
+//             auto lengthRatio = eit->curve().squared_length() / m_originalSegments[&*eit].squared_length();
+             auto diff = sqrt(eit->curve().squared_length()) - sqrt(m_originalSegments[&*eit].squared_length());
+             auto v = eit->curve().to_vector();
+             v /= sqrt(v.squared_length());
+             addForce(eit->source(), diff / 2 * v / 2);
+             addForce(eit->target(), -diff / 2 * v / 2);
+        }
+
+        for (auto eit = m_g.edges_begin(); eit != m_g.edges_end(); ++eit) {
+            auto s = eit->curve();
+            auto v = s.to_vector();
+            auto ogS = m_originalSegments[&*eit];
+            auto ogV = ogS.to_vector();
+            auto angleCw = orientedAngleBetween(v, ogV, CGAL::CLOCKWISE);
+            auto angleCcw = orientedAngleBetween(v, ogV, CGAL::COUNTERCLOCKWISE);
+            auto angle = abs(angleCw) < abs(angleCcw) ? -angleCw : angleCcw;
+            CGAL::Aff_transformation_2<Inexact> translate(CGAL::TRANSLATION, midpoint(s) - CGAL::ORIGIN);
+            CGAL::Aff_transformation_2<Inexact> rotate(CGAL::ROTATION, sin(angle / 4), cos(angle / 4));
+            CGAL::Aff_transformation_2<Inexact> transform = translate * rotate * translate.inverse();
+
+            if (abs(angle) < M_EPSILON) continue;
+            auto rotatedS = eit->curve().transform(transform);
+//#if DEBUG_MIN_DIST
+//            using namespace renderer;
+//            IpeRenderer ipeRenderer;
+//            ipeRenderer.addPainting([&](GeometryRenderer& renderer) {
+//                renderer.setStroke(Color(0, 0, 0), 1.0);
+//                renderer.draw(ogS);
+//                renderer.setStroke(Color(255, 0, 0), 1.0);
+//                renderer.draw(Segment<Inexact>({0, 0}, Point<Inexact>{0, 0} + ogV));
+//                renderer.setStroke(Color(0, 255, 0), 1.0);
+//                renderer.draw(s);
+//                renderer.setStroke(Color(0, 0, 255), 1.0);
+//                renderer.draw(rotatedS);
+//            });
+//            std::stringstream fn;
+//            using namespace std::chrono;
+//            milliseconds ms = duration_cast<milliseconds>(
+//                    system_clock::now().time_since_epoch()
+//            );
+//            fn << "debug_min_dist_rotate_" << ms << ".ipe";
+//            std::cout << fn.str() << std::endl;
+//            ipeRenderer.save(fn.str());
+////
+//#endif
+
+            addForce(eit->source(), rotatedS.source() - s.source());
+            addForce(eit->target(), rotatedS.target() - s.target());
+        }
+
+        for (auto vit = m_g.vertices_begin(); vit != m_g.vertices_end(); ++vit) {
+            if (forces.contains(vit->point())) {
+                Vector<Inexact> force = forces.at(vit->point());
+//                force /= sqrt(force.squared_length());
+//                force *= m_averageEdgeLength / 10;
+                if (finite(force.x()) && !isnan(force.x()) && finite(force.y()) && !isnan(force.y())) {
+                    applyForce(vit, force);
+                }
             }
-            applyForce(vh, force);
         }
 
         recomputeDelaunay();

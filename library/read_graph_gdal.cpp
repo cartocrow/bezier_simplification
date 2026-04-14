@@ -342,13 +342,9 @@ void exportTopoSetUsingGDAL(const std::filesystem::path& path, const TopoSet<Ine
             }
         }
 
-        IpeRenderer ipeRenderer;
-
-        std::sort(entries.begin(), entries.end(), [&ipeRenderer](const auto& a, const auto& b) {
+        std::sort(entries.begin(), entries.end(), [](const auto& a, const auto& b) {
             return std::get<2>(a) < std::get<2>(b);
         });
-
-        ipeRenderer.save("debugging_nesting.ipe");
 
         int index = 0;
         for (const auto& ps : entries) {

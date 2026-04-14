@@ -198,8 +198,9 @@ public:
         bool m_showVertices;
         bool m_showEdgeDirection;
         bool m_showControlPoints;
+        bool m_showArcIndex;
 
-        DrawSettings() : m_trans(CGAL::IDENTITY), m_showVertices(false), m_showEdgeDirection(false), m_showControlPoints(false) {};
+        DrawSettings() : m_trans(CGAL::IDENTITY), m_showVertices(false), m_showEdgeDirection(false), m_showControlPoints(false), m_showArcIndex(false) {};
     };
 
     DrawSettings m_drawSettings;
@@ -212,6 +213,7 @@ public:
         const auto& m_showVertices = m_drawSettings.m_showVertices;
         const auto& m_showEdgeDirection = m_drawSettings.m_showEdgeDirection;
         const auto& m_showControlPoints = m_drawSettings.m_showControlPoints;
+        const auto& m_showArcIndex = m_drawSettings.m_showArcIndex;
 
         renderer.setMode(GeometryRenderer::stroke);
         renderer.setStroke(Color(0, 0, 0), 2.0);
@@ -225,6 +227,10 @@ public:
             if (m_showEdgeDirection) {
                 renderer.setStroke(Color(0, 0, 0), 6.0);
                 renderer.draw(eit->curve().split(0.25).first.transform(m_trans));
+            }
+
+            if (m_showArcIndex) {
+                renderer.drawText(eit->curve().position(0.5).transform(m_trans), std::to_string(eit->data().index));
             }
         }
         if (m_showControlPoints) {
@@ -274,6 +280,7 @@ class BezierSimplificationDemo : public QMainWindow {
     std::unique_ptr<DoubleSliderSpinBox> m_minDist;
     std::unique_ptr<DoubleSliderSpinBox> m_minAdjDist;
     std::unique_ptr<DoubleSliderSpinBox> m_minComponentLength;
+    std::unique_ptr<DoubleSliderSpinBox> m_minCrumbArea;
     std::unique_ptr<ComplexitySliders> m_complexitySliders;
     Forcer m_forcer;
     DoubleSlider* m_minAngle;

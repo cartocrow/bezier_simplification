@@ -575,6 +575,13 @@ public:
         }
 
         auto evaluate = [&](const CubicBezierSpline& afterSpline) {
+            // If the spline is very stretched and large computations such as selfIntersects may fail
+            // So start by filtering these out
+            auto afterBbox = afterSpline.bbox();
+            if (afterBbox.x_span() > 1E9 || afterBbox.y_span() > 1E9) {
+                return;
+            }
+
             auto afterPl = afterSpline.polyline(10);
 
             auto curvatureInfo = evaluateCurvature(afterSpline);
@@ -590,6 +597,7 @@ public:
 //                std::cout << "c1 connects smoothly to c2: " << connectsSmoothlyTo(c1, c2) << std::endl;
 //                std::cout << "c0_ connects smoothly to c1_: " << connectsSmoothlyTo(c0_, c1_) << std::endl;
 //            }
+
             if ((createsSmoothConnection || maxKappaAfter < 1.1 * maxKappaBefore) && !afterSpline.selfIntersects(0.01)) {
                 symDiffErr = evaluateSymDiff(beforeSpline, afterSpline);
                 err = sqrt(symDiffErr);
