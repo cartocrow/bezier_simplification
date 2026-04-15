@@ -21,8 +21,9 @@
 #include <CGAL/Segment_Delaunay_graph_storage_traits_with_info_2.h>
 
 #include <chrono>
+#include <cmath>
 
-#define DEBUG_MIN_DIST 1
+#define DEBUG_MIN_DIST 0
 
 namespace cartocrow::curved_simplification {
 template <class BezierGraph>
@@ -1037,7 +1038,7 @@ class MinimumDistanceForcer {
                 Vector<Inexact> force = forces.at(vit->point());
 //                force /= sqrt(force.squared_length());
 //                force *= m_averageEdgeLength / 10;
-                if (finite(force.x()) && !isnan(force.x()) && finite(force.y()) && !isnan(force.y())) {
+                if (std::isfinite(force.x()) && !isnan(force.x()) && std::isfinite(force.y()) && !isnan(force.y())) {
                     applyForce(vit, force);
                 }
             }
