@@ -24,10 +24,10 @@ struct RegionSetVertexPQTTraits {
 	}
 };
 
-static_assert(datastructures::PointQuadTreeTraits<RegionSetVertexPQTTraits>);
+static_assert(data_structures::PointQuadTreeTraits<RegionSetVertexPQTTraits>);
 
 void snapVertices(RegionSet<Inexact>& regionSet, std::optional<double> epsilon) {
-	using namespace cartocrow::datastructures;
+	using namespace cartocrow::data_structures;
 	auto bbox = regionSet.bbox();
 	Rectangle<Inexact> box(bbox.xmin(), bbox.ymin(), bbox.xmax(), bbox.ymax());
 	PointQuadTree<RegionSetVertexPQTTraits> pqt(box, 10);

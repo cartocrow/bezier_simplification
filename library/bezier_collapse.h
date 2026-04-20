@@ -2,9 +2,9 @@
 
 #include <cartocrow/core/core.h>
 #include <cartocrow/core/arrangement_helpers.h>
+#include <cartocrow/data_structures/indexed_priority_queue.h>
 #include "core/bezier_graph_2.h"
 #include "common.h"
-#include "indexed_priority_queue.h"
 #include "curved_graph_with_history.h"
 #include "bezier_curve_quad_tree.h"
 
@@ -85,10 +85,10 @@ class BezierCollapse {
 	using Edge_handle = BG::Edge_handle;
 	BG& m_g;
 	BCT m_traits;
-    std::unique_ptr<BezierCurveQuadTree<Edge_handle, Exact>> m_bcqt; // optional as we create it only on initialize() call
+    std::unique_ptr<BezierCurveQuadTree<BG>> m_bcqt; // optional as we create it only on initialize() call
 
   public:
-    IndexedPriorityQueue<GraphQueueTraits<Edge_handle, Inexact>> m_q;
+    cartocrow::data_structures::IndexedPriorityQueue<GraphQueueTraits<Edge_handle, Inexact>> m_q;
 
   private:
 	void update(Edge_handle e) {
@@ -121,8 +121,8 @@ class BezierCollapse {
             curves.push_back(eit->curve());
         }
         Box bigBbox = CGAL::bbox_2(curves.begin(), curves.end());
-        Rectangle<Exact> bigRect(bigBbox.xmin(), bigBbox.ymin(), bigBbox.xmax(), bigBbox.ymax());
-        m_bcqt = std::make_unique<BezierCurveQuadTree<Edge_handle, Exact>>(bigRect, 10, 0.05, [](Edge_handle e) { return e->curve(); });
+        Rectangle<Inexact> bigRect(bigBbox.xmin(), bigBbox.ymin(), bigBbox.xmax(), bigBbox.ymax());
+        m_bcqt = std::make_unique<BezierCurveQuadTree<BG>>(bigRect, 10, 0.05);
 
         for (auto eit = m_g.edges_begin(); eit != m_g.edges_end(); ++eit) {
             m_bcqt->insert(eit);
@@ -292,7 +292,7 @@ class BezierCollapse {
 
             auto [beforeSpline, afterSpline] = beforeAndAfterCollapse(e);
             Box box = beforeSpline.bbox() + afterSpline.bbox();
-            Rectangle<Exact> rect(box.xmin(), box.ymin(), box.xmax(), box.ymax());
+            Rectangle<Inexact> rect(box.xmin(), box.ymin(), box.xmax(), box.ymax());
 
             edata.blocked_by_degzero = false;
 

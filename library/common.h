@@ -4,19 +4,19 @@
 
 namespace cartocrow::curved_simplification {
 
-template<class Elt, typename Kernel>
+template<class EltHandle, typename Kernel>
 struct GraphQueueTraits {
-	using EltHandle = Elt;
+	using Element_handle = EltHandle;
 
-	static void setIndex(Elt elt, int index) {
+	static void setIndex(EltHandle elt, int index) {
 		elt->data().qid = index;
 	}
 
-	static int getIndex(Elt elt) {
+	static int getIndex(EltHandle elt) {
 		return elt->data().qid;
 	}
 
-	static int compare(Elt a, Elt b) {
+	static int compare(EltHandle a, EltHandle b) {
         const auto& aclps = a->data().collapse;
         const auto& bclps = b->data().collapse;
 		Number<Kernel> ac = aclps.has_value() ? aclps->cost : std::numeric_limits<double>::infinity();

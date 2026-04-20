@@ -1310,8 +1310,8 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_graph(m_baseGraph), m_c
 }
 
 void BezierSimplificationDemo::checkIntersections() {
-    Rectangle<Exact> rect(0, 0, 1000, 1000);
-    BezierCurveQuadTree<Edge_handle, Exact> bcqt(rect, 10, 0.05, [](Edge_handle e) { return e->curve(); });
+    Rectangle<Inexact> rect(0, 0, 1000, 1000);
+    BezierCurveQuadTree<BaseGraph> bcqt(rect, 10, 0.05);
 
     m_intersectionsPainting = {};
     GeometryRenderer& r = m_intersectionsPainting;
@@ -1332,7 +1332,7 @@ void BezierSimplificationDemo::checkIntersections() {
 
     for (auto eit = theBaseGraph.edges_begin(); eit != theBaseGraph.edges_end(); ++eit) {
         auto box = eit->curve().bbox();
-        Rectangle<Exact> rect(box.xmin(), box.ymin(), box.xmax(), box.ymax());
+        Rectangle<Inexact> rect(box.xmin(), box.ymin(), box.xmax(), box.ymax());
         bcqt.findOverlapped(rect, [&](const BaseGraph::Edge_handle& other) {
             if (other == eit) return false;
 
