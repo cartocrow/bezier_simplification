@@ -4,7 +4,7 @@
 #include <cartocrow/core/cubic_bezier.h>
 #include <cartocrow/core/rectangle_helpers.h>
 
-namespace cartocrow::curved_simplification::utils {
+namespace cartocrow::utils {
 
 	template <typename K>
 	Rectangle<K> boxOf(Point<K>& a, Point<K>& b, Point<K>& c) {
@@ -174,7 +174,7 @@ namespace cartocrow::curved_simplification::utils {
 	}
 
 	template<typename T>
-	T* swapRemove(int index, std::vector<T*>& vec) {
+	T* swapRemove(int index, std::vector<T>& vec) {
 		if (index == vec.size() - 1) {
 			vec.pop_back();
 			return nullptr;
@@ -182,12 +182,12 @@ namespace cartocrow::curved_simplification::utils {
 		else {
 			vec[index] = vec[vec.size() - 1];
 			vec.pop_back();
-			return vec[index];
+			return &vec[index];
 		}
 	}
 
 	template<typename T>
-	void listReplace(T* oldelt, T* newelt, std::vector<T*>& vec) {
+	void listReplace(T oldelt, T newelt, std::vector<T>& vec) {
 		for (int i = 0; i < vec.size(); i++) {
 			if (vec[i] == oldelt) {
 				vec[i] = newelt;

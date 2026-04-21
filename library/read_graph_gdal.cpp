@@ -71,7 +71,7 @@ Straight_graph_2<std::monostate, std::monostate, Inexact> readGraphUsingGDAL(con
         if (pToV.contains(p)) {
             return pToV.at(p);
         } else {
-            auto newV = g.insert_vertex(p);
+            auto newV = g.add_vertex(p);
             pToV[p] = newV;
             return newV;
         }

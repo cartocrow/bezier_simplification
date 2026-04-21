@@ -61,7 +61,7 @@ approximateBezierGraph(const BezierGraph& bg, int nPoints) {
     SG g;
 
     for (auto vit = bg.vertices_begin(); vit != bg.vertices_end(); ++vit) {
-        auto vh = g.insert_vertex(vit->point());
+        auto vh = g.add_vertex(vit->point());
         vh->data().originalVertex = vit;
         vmap[&*vit] = vh;
     }
@@ -83,7 +83,7 @@ approximateBezierGraph(const BezierGraph& bg, int nPoints) {
         }
 
         for (int i = 1; i < pts.size(); ++i) {
-            auto endVertex = i == pts.size() - 1 ? curveEndVertex : g.insert_vertex(pts[i]);
+            auto endVertex = i == pts.size() - 1 ? curveEndVertex : g.add_vertex(pts[i]);
             auto eh = g.add_edge(lastVertex, endVertex, {lastVertex->point(), endVertex->point()});
             eh->data().originalEdge = eit;
             eh->data().changed = false;
@@ -107,7 +107,7 @@ BezierGraph reconstructBezierGraph(const ApproximatedBezierGraph<BezierGraph>& s
 
     for (auto vit = sg.vertices_begin(); vit != sg.vertices_end(); ++vit) {
         if (vit->data().originalVertex.has_value()) {
-            auto vh = bg.insert_vertex(vit->point());
+            auto vh = bg.add_vertex(vit->point());
             auto& og = *vit->data().originalVertex;
             vh->data() = og->data();
             vmap[&*vit] = vh;
@@ -186,7 +186,7 @@ BezierGraph reconstructBezierGraph(const ApproximatedBezierGraph<BezierGraph>& s
                     auto lastVertex = vmap[&*vit];
                     for (int i = 0; i < spline.numCurves(); ++i) {
                         auto c = spline.curve(i);
-                        auto nextVertex = i == spline.numCurves() - 1 ? otherVertex : bg.insert_vertex(c.target());
+                        auto nextVertex = i == spline.numCurves() - 1 ? otherVertex : bg.add_vertex(c.target());
                         typename BezierGraph::Edge_handle eh;
                         if (!std::isfinite(c.source().x()) || !std::isfinite(c.source().y()) ||
                             !std::isfinite(c.sourceControl().x()) || !std::isfinite(c.sourceControl().y()) ||

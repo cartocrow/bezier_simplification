@@ -110,7 +110,7 @@ void BezierSimplificationDemo::loadInput(const std::filesystem::path& path) {
         if (pToV.contains(p)) {
             return pToV.at(p);
         } else {
-            auto newV = m_baseGraph.insert_vertex(p);
+            auto newV = m_baseGraph.add_vertex(p);
             pToV[p] = newV;
             return newV;
         }

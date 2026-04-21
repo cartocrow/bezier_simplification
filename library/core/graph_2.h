@@ -1,20 +1,7 @@
 #pragma once
 
 #include "graph_curve_traits_2.h"
-
-namespace utils {
-    template<typename T>
-    bool vectorRemove(T elt, std::vector<T>& vec) {
-        auto pos = std::find(vec.begin(), vec.end(), elt);
-        if (pos != vec.end()) {
-            vec.erase(pos);
-            return true;
-        }
-        else {
-            return false;
-        }
-    }
-}
+#include "../utils.h"
 
 namespace cartocrow {
 template <class VertexData, class EdgeData, GraphCurveTraits_2 CurveTraits> class Graph_2_vertex;
@@ -83,7 +70,7 @@ class Graph_2 {
                     new_source,
                     new_target,
                     eit->m_curve,
-                    eit->m_d
+                    eit->m_data
             );
 
             auto new_eit = std::prev(m_edges.end());
@@ -133,7 +120,7 @@ class Graph_2 {
                     new_source,
                     new_target,
                     Curve_traits::transform(eit->m_curve, trans),
-                    eit->m_d
+                    eit->m_data
             );
 
             auto new_eit = std::prev(transformed.m_edges.end());
@@ -172,19 +159,23 @@ class Graph_2 {
         m_oriented = false;
         m_sorted = false;
     }
-	Vertex_handle insert_vertex(Point_2 p) {
+	Vertex_handle add_vertex(Point_2 p) {
 		Vertex& v = m_vertices.emplace_back();
 		v.m_point = std::move(p);
 		return (--m_vertices.end());
 	}
 	void remove_vertex(Vertex_handle v) {
-		m_vertices.erase(v);
+        for (Edge_handle e : v->m_incident) {
+            remove_edge(e);
+        }
+        m_vertices.erase(v);
 	}
 	Edge_handle add_edge(Vertex_handle source, Vertex_handle target, const Curve_2& curve) {
 		Edge& e = m_edges.emplace_back(std::move(source), std::move(target), std::move(curve));
 		Edge_handle eh = --m_edges.end();
 		Vertex_handle es = e.m_source;
 		Vertex_handle et = e.m_target;
+        m_sorted = false;
 
 		std::vector<Edge_handle>& esInc = es->m_incident;
 		std::vector<Edge_handle>& etInc = et->m_incident;
@@ -201,8 +192,8 @@ class Graph_2 {
 	void remove_edge(Edge_handle edge) {
 		auto& sInc = edge->m_source->m_incident;
 		auto& tInc = edge->m_target->m_incident;
-		utils::vectorRemove(edge, sInc);
-		utils::vectorRemove(edge, tInc);
+		utils::listRemove(edge, sInc);
+		utils::listRemove(edge, tInc);
 		m_edges.erase(edge);
 	}
     /// Split a vertex into two. Or equivalently, replace two curves by three new ones.
@@ -218,8 +209,8 @@ class Graph_2 {
         remove_edge(e0);
         remove_edge(e1);
         remove_vertex(v);
-        auto v1 = insert_vertex(c0.target());
-        auto v2 = insert_vertex(c1.target());
+        auto v1 = add_vertex(c0.target());
+        auto v2 = add_vertex(c1.target());
         add_edge(v0, v1, c0);
         auto eh = add_edge(v1, v2, c1);
         add_edge(v2, v3, c2);
@@ -248,7 +239,7 @@ class Graph_2 {
         remove_vertex(eTarget);
 
         // Add new vertex
-        auto v = insert_vertex(toNewPoint.target());
+        auto v = add_vertex(toNewPoint.target());
         // Add the two new edges
         auto eh1 = add_edge(prevSource, v, toNewPoint);
         auto eh2 = add_edge(v, nextTarget, fromNewPoint);
@@ -287,7 +278,7 @@ class Graph_2 {
         auto s = e->source();
         auto t = e->target();
         remove_edge(e);
-        auto vh = insert_vertex(toNewPoint.target());
+        auto vh = add_vertex(toNewPoint.target());
         add_edge(s, vh, toNewPoint);
         add_edge(vh, t, fromNewPoint);
 
@@ -518,7 +509,7 @@ class Graph_2_edge {
 	Vertex_handle m_source;
 	Vertex_handle m_target;
 	Curve_2 m_curve;
-	EdgeData m_d;
+	EdgeData m_data;
 
   public:
 	Graph_2_edge(Vertex_handle source, Vertex_handle target, Curve_2 curve)
@@ -528,12 +519,16 @@ class Graph_2_edge {
 	};
 
 	Graph_2_edge(Vertex_handle source, Vertex_handle target, Curve_2 curve, Edge_data d)
-	    : m_source(std::move(source)), m_target(std::move(target)), m_curve(std::move(curve)), m_d(std::move(d)) {};
+	    : m_source(std::move(source)), m_target(std::move(target)), m_curve(std::move(curve)), m_data(std::move(d)) {};
 
 	Vertex_handle source() { return m_source; }
 	Vertex_handle target() { return m_target; }
 	Vertex_const_handle source() const { return m_source; }
 	Vertex_const_handle target() const { return m_target; }
+    Vertex_handle other(Vertex_handle v) {
+        assert(v == m_source || v == m_target);
+        return v == m_source ? m_target : m_source;
+    }
     Curve_2& curve() { return m_curve; }
 	const Curve_2& curve() const { return m_curve; }
 	void reverse() {
@@ -553,10 +548,10 @@ class Graph_2_edge {
         return m_target->outgoing();
     }
 	Edge_data& data() {
-		return m_d;
+		return m_data;
 	}
     const Edge_data& data() const {
-        return m_d;
+        return m_data;
     }
 };
 }
