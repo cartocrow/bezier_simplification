@@ -29,6 +29,7 @@ class Graph_2 {
 	Edge_container m_edges;
 	bool m_oriented = false;
     bool m_sorted = false;
+    bool m_indexed = false;
 
   public:
 	using Vertex_iterator = Vertex_container::iterator;
@@ -40,6 +41,40 @@ class Graph_2 {
 	using Edge_handle = Edge_iterator;
 	using Edge_const_handle = Edge_const_iterator;
 
+    void index_vertices_and_edges() {
+        m_indexed = true;
+        int index = 0;
+        for (auto& v : m_vertices) {
+            v.m_index = index;
+            ++index;
+        }
+
+        index = 0;
+        for (auto& e : m_edges) {
+            e.m_index = index;
+            ++index;
+        }
+    }
+
+    bool verify_indexed() {
+        int index = 0;
+        for (auto& v : m_vertices) {
+            if (v.m_index != index) return false;
+            ++index;
+        }
+        index = 0;
+        for (auto& e : m_edges) {
+            if (e.m_index != index) return false;
+            ++index;
+        }
+        return true;
+    }
+
+    bool is_indexed() {
+        assert(!m_indexed || verify_indexed());
+        return m_indexed;
+    }
+
     Graph_2& operator=(const Graph_2& other) {
         if (this == &other) return *this;
 
@@ -48,6 +83,7 @@ class Graph_2 {
 
         m_oriented = other.m_oriented;
         m_sorted   = other.m_sorted;
+        m_indexed  = other.m_indexed;
 
         std::unordered_map<const Vertex*, Vertex_handle> vmap;
 
@@ -56,6 +92,7 @@ class Graph_2 {
             auto new_vit = std::prev(m_vertices.end());
             new_vit->point() = vit->point();
             new_vit->data() = vit->data();
+            new_vit->m_index = vit->m_index;
 
             vmap[&*vit] = new_vit;
         }
@@ -66,12 +103,13 @@ class Graph_2 {
             Vertex_handle new_source = vmap.at(&*eit->m_source);
             Vertex_handle new_target = vmap.at(&*eit->m_target);
 
-            m_edges.emplace_back(
+            auto& e = m_edges.emplace_back(
                     new_source,
                     new_target,
                     eit->m_curve,
                     eit->m_data
             );
+            e.m_index = eit->m_index;
 
             auto new_eit = std::prev(m_edges.end());
             emap[&*eit] = new_eit;
@@ -162,9 +200,13 @@ class Graph_2 {
 	Vertex_handle add_vertex(Point_2 p) {
 		Vertex& v = m_vertices.emplace_back();
 		v.m_point = std::move(p);
+        if (m_indexed) {
+            v.m_index = m_vertices.size() - 1;
+        }
 		return (--m_vertices.end());
 	}
 	void remove_vertex(Vertex_handle v) {
+        m_indexed = false;
         for (Edge_handle e : v->m_incident) {
             remove_edge(e);
         }
@@ -187,9 +229,13 @@ class Graph_2 {
 			etInc.push_back(etInc.front());
 			etInc[0] = eh;
 		}
+        if (m_indexed) {
+            eh->m_index = m_edges.size() - 1;
+        }
 		return eh;
 	}
 	void remove_edge(Edge_handle edge) {
+        m_indexed = false;
 		auto& sInc = edge->m_source->m_incident;
 		auto& tInc = edge->m_target->m_incident;
 		utils::listRemove(edge, sInc);
@@ -427,8 +473,12 @@ class Graph_2_vertex {
 	Point_2 m_point;
 	Edge_container m_incident = Edge_container();
     Vertex_data m_data;
+    size_t m_index;
 
   public:
+    size_t graph_index() const {
+        return m_index;
+    }
 	const Point_2& point() const {
 		return m_point;
 	}
@@ -510,6 +560,7 @@ class Graph_2_edge {
 	Vertex_handle m_target;
 	Curve_2 m_curve;
 	EdgeData m_data;
+    size_t m_index;
 
   public:
 	Graph_2_edge(Vertex_handle source, Vertex_handle target, Curve_2 curve)
@@ -521,6 +572,7 @@ class Graph_2_edge {
 	Graph_2_edge(Vertex_handle source, Vertex_handle target, Curve_2 curve, Edge_data d)
 	    : m_source(std::move(source)), m_target(std::move(target)), m_curve(std::move(curve)), m_data(std::move(d)) {};
 
+    size_t graph_index() const { return m_index; }
 	Vertex_handle source() { return m_source; }
 	Vertex_handle target() { return m_target; }
 	Vertex_const_handle source() const { return m_source; }
