@@ -1,5 +1,4 @@
 #include "core/bezier_graph_2.h"
-#include "core/straight_graph_2.h"
 
 #include "conic_types.h"
 #include "intersection_helpers.h"
@@ -10,6 +9,7 @@
 #include <cartocrow/core/vector_helpers.h>
 #include <cartocrow/core/segment_delaunay_graph_helpers.h>
 #include <cartocrow/core/delaunay_voronoi_helpers.h>
+#include <cartocrow/data_structures/straight_graph_2.h>
 
 #include <cartocrow/renderer/ipe_renderer.h>
 

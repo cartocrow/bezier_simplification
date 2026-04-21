@@ -1,7 +1,7 @@
 #pragma once
 
 #include <concepts>
-#include "graph_curve_traits_2.h"
+#include <cartocrow/data_structures/graph_curve_traits_2.h>
 
 namespace cartocrow {
 template<class G>

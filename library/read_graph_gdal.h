@@ -1,7 +1,7 @@
 #pragma once
 
 #include <cartocrow/core/cubic_bezier.h>
-#include "library/core/straight_graph_2.h"
+#include <cartocrow/data_structures/straight_graph_2.h>
 #include <filesystem>
 #include "library/core/region_set.h"
 #include "library/core/topo_set.h"

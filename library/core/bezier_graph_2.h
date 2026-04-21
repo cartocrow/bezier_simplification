@@ -1,6 +1,6 @@
 #pragma once
 
-#include "graph_2.h"
+#include <cartocrow/data_structures/graph_2.h>
 #include "graph_bezier_curve_traits_2.h"
 
 namespace cartocrow {

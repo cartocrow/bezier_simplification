@@ -1,7 +1,7 @@
 #pragma once
 
 #include <cartocrow/core/cubic_bezier.h>
-#include "graph_curve_traits_2.h"
+#include <cartocrow/data_structures/graph_curve_traits_2.h>
 
 namespace cartocrow {
 struct Graph_Bezier_curve_traits_2 {

@@ -13,10 +13,7 @@ set(SHARED_SOURCES
 set(SHARED_HEADERS
     common.h
     core/bezier_graph_2.h
-    core/graph_2.h
     core/graph_bezier_curve_traits_2.h
-    core/graph_segment_traits_2.h
-    core/graph_curve_traits_2.h
     core/graph_2_like.h
     core/region_set.h
     core/topo_set.h

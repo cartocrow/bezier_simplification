@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 #include "library/steven_bezier_collapse.h"
-#include "library/core/straight_graph_2.h"
+#include <cartocrow/data_structures/straight_graph_2.h>
 #include "library/read_ipe_bezier_spline.h"
 
 using namespace cartocrow;
