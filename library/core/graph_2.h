@@ -1,7 +1,20 @@
 #pragma once
 
 #include "graph_curve_traits_2.h"
-#include "../utils.h"
+
+namespace utils {
+template<typename T>
+bool vectorRemove(T elt, std::vector<T>& vec) {
+    auto pos = std::find(vec.begin(), vec.end(), elt);
+    if (pos != vec.end()) {
+        vec.erase(pos);
+        return true;
+    }
+    else {
+        return false;
+    }
+}
+}
 
 namespace cartocrow {
 template <class VertexData, class EdgeData, GraphCurveTraits_2 CurveTraits> class Graph_2_vertex;
@@ -238,8 +251,8 @@ class Graph_2 {
         m_indexed = false;
 		auto& sInc = edge->m_source->m_incident;
 		auto& tInc = edge->m_target->m_incident;
-		utils::listRemove(edge, sInc);
-		utils::listRemove(edge, tInc);
+        utils::vectorRemove(edge, sInc);
+        utils::vectorRemove(edge, tInc);
 		m_edges.erase(edge);
 	}
     /// Split a vertex into two. Or equivalently, replace two curves by three new ones.
