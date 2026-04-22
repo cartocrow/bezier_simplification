@@ -4,6 +4,7 @@
 #include <cartocrow/core/polyline.h>
 #include <cartocrow/core/transform_helpers.h>
 #include <cartocrow/core/polyline_set.h>
+#include <cartocrow/core/point_set.h>
 
 namespace cartocrow {
 template<class... Ts>
@@ -15,7 +16,7 @@ overloaded(Ts...) -> overloaded<Ts...>;
 
 template<class K>
 struct GeometrySet {
-    using Geometry = std::variant<PolygonSetRaw<K>, PolygonWithHoles<K>, Polygon<K>, PolylineSet<K>, Polyline<K>>;
+    using Geometry = std::variant<PolygonSetRaw<K>, PolygonWithHoles<K>, Polygon<K>, PolylineSet<K>, Polyline<K>, Point<K>, PointSet<K>>;
     std::vector<Geometry> geometries;
 
     GeometrySet<K> transform(const CGAL::Aff_transformation_2<K>& trans) {

@@ -428,6 +428,16 @@ GeometrySet<Inexact> readGeometrySetUsingGDAL(const std::filesystem::path& path)
                 geometrySet.geometries.push_back(ogrMultiLineStringToPolylineSet(*pl));
                 break;
             }
+            case wkbPoint: {
+                OGRPoint* p = poGeometry->toPoint();
+                geometrySet.geometries.push_back(ogrPointToPoint(*p));
+                break;
+            }
+            case wkbMultiPoint: {
+                OGRMultiPoint* mp = poGeometry->toMultiPoint();
+                geometrySet.geometries.push_back(ogrMultiPointToPointSet(*mp));
+                break;
+            }
             default: std::cout << "Did not handle this type of geometry: " << poGeometry->getGeometryName() << std::endl;
         }
     }
