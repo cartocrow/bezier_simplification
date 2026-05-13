@@ -55,7 +55,7 @@ TopoSetDemo::TopoSetDemo() {
     regionSet.regions.push_back(Region<Inexact>({}, polygonSet1));
 //    regionSet.push_back(Region<Inexact>({}, polygonSet2));
     regionSet.regions.push_back(Region<Inexact>({}, polygonSet3));
-    TopoSet<Inexact> topoSet(regionSet);
+    StraightTopoSet<Inexact> topoSet = regionSetToTopoSet(regionSet);
 
     setWindowTitle("TopoSet demo");
     m_renderer = new GeometryWidget();
@@ -64,7 +64,7 @@ TopoSetDemo::TopoSetDemo() {
 
     m_renderer->addPainting([topoSet](GeometryRenderer& renderer) {
 //        for (const auto& feature : topoSet.features) {
-//            auto polygonSet = get<TopoSet<Inexact>::PolygonSetGeometry>(feature.geometry);
+//            auto polygonSet = get<StraightTopoSet<Inexact>::PolygonSetGeometry>(feature.geometry);
 //            auto ps = polygonSet.getGeometry(topoSet);
 //            renderer.draw(ps);
 //        }

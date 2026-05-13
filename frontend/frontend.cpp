@@ -18,13 +18,14 @@
 #include "library/read_graph_gdal.h"
 #include "library/read_ipe_bezier_spline.h"
 #include "library/vertex_snap.h"
+#include "library/topojson_export.h"
 
 #include <cartocrow/renderer/voronoi_drawer.h>
 #include <cartocrow/core/transform_helpers.h>
 
 #define DEBUG 0
 
-void saveGraphIntoTopoSet(const BaseGraph& graph, TopoSet<Inexact>& topoSet) {
+void saveGraphIntoTopoSet(const BaseGraph& graph, BezierTopoSet& topoSet) {
     std::unordered_set<const BaseGraph::Edge*> visited;
 
     for (auto eit = graph.edges_begin(); eit != graph.edges_end(); ++eit) {
@@ -69,15 +70,12 @@ void saveGraphIntoTopoSet(const BaseGraph& graph, TopoSet<Inexact>& topoSet) {
             }
         }
 
-        int nPoints = std::max(std::min(1000.0, 31998.0 / arcSize), 5.0);
-
-        Polyline<Inexact> arc;
-        start->curve().samplePoints(isStraight(start->curve()) ? 2 : nPoints, std::back_inserter(arc));
+        CubicBezierSpline arc;
+        arc.appendCurve(start->curve());
 
         if (start != end) {
             for (auto arcEit = start->next(); true; arcEit = arcEit->next()) {
-                arc.pop_back();
-                arcEit->curve().samplePoints(isStraight(arcEit->curve()) ? 2 : nPoints, std::back_inserter(arc));
+                arc.appendCurve(arcEit->curve());
                 if (arcEit == end) break;
             }
         }
@@ -93,6 +91,80 @@ bool liesOnBbox(const Point<Inexact>& p, const Box& bbox) {
         abs(p.y() - bbox.ymax()) < M_EPSILON;
 }
 
+void insertSplinesIntoGraph(const std::vector<CubicBezierSpline>& splines, BaseGraph& g) {
+    std::unordered_map<Point<Inexact>, BaseGraph::Vertex_handle> pToV;
+
+    auto getVertex = [&pToV, &g](const Point<Inexact>& p) {
+        if (pToV.contains(p)) {
+            return pToV.at(p);
+        }
+        else {
+            auto newV = g.add_vertex(p);
+            pToV[p] = newV;
+            return newV;
+        }
+    };
+
+    for (const auto& spline : splines) {
+        if (spline.empty()) continue;
+        auto lastV = getVertex(spline.curves()[0].source());
+        for (const auto& curve : spline.curves()) {
+            auto targetV = getVertex(curve.target());
+            g.add_edge(lastV, targetV, curve);
+            lastV = targetV;
+        }
+    }
+}
+
+void insertTopoSetIntoGraph(const BezierTopoSet& ts, BaseGraph& g, bool ignoreBbox) {
+    std::unordered_map<Point<Inexact>, BaseGraph::Vertex_handle> pToV;
+
+    auto getVertex = [&pToV, &g](const Point<Inexact>& p) {
+        if (pToV.contains(p)) {
+            return pToV.at(p);
+        }
+        else {
+            auto newV = g.add_vertex(p);
+            pToV[p] = newV;
+            return newV;
+        }
+    };
+
+    auto bboxT = ts.bbox();
+
+    for (int i = 0; i < ts.arcs.size(); ++i) {
+        const auto& arc = ts.arcs[i];
+        for (auto eit = arc.curves_begin(); eit != arc.curves_end(); ++eit) {
+            auto sourceV = getVertex(eit->source());
+            auto targetV = getVertex(eit->target());
+            auto curve = *eit;
+
+            // There should be no duplicates but there are somehow a couple, so we do this for now...
+            bool oppositeExists = false;
+            bool alreadyExists = false;
+            for (auto ieit = targetV->incident_edges_begin(); ieit != targetV->incident_edges_end(); ++ieit) {
+                if ((*ieit)->target() == sourceV && (*ieit)->curve() == curve.reversed()) {
+                    oppositeExists = true;
+                    std::cout << "Found an opposite edge!" << std::endl;
+                    break;
+                }
+                if ((*ieit)->source() == sourceV && (*ieit)->curve() == curve) {
+                    alreadyExists = true;
+                    std::cout << "Found a duplicate edge!" << std::endl;
+                    break;
+                }
+            }
+
+            if (!oppositeExists && !alreadyExists) {
+                auto eh = g.add_edge(sourceV, targetV, curve);
+                eh->data().index = i;
+                bool edgeOnBbox = ignoreBbox && liesOnBbox(sourceV->point(), bboxT) && liesOnBbox(targetV->point(), bboxT);
+                eh->data().collapse_allowed = !edgeOnBbox;
+            }
+        }
+    }
+}
+
 void BezierSimplificationDemo::loadInput(const std::filesystem::path& path) {
     baseModified(false);
     double prevScale = getScale();
@@ -104,31 +176,22 @@ void BezierSimplificationDemo::loadInput(const std::filesystem::path& path) {
     m_approxGraph.clear();
     m_voronoiPainting = PaintingRenderer{};
 
-    std::unordered_map<Point<Inexact>, BaseGraph::Vertex_handle> pToV;
-
-    auto getVertex = [&pToV, this](const Point<Inexact>& p) {
-        if (pToV.contains(p)) {
-            return pToV.at(p);
-        } else {
-            auto newV = m_baseGraph.add_vertex(p);
-            pToV[p] = newV;
-            return newV;
-        }
-    };
-
     if (path.extension() == ".ipe") {
         auto splines = ipeSplinesToIsolines(path);
+        insertSplinesIntoGraph(splines, m_baseGraph);
+    }
+    else if (path.extension() == ".json") {
+        auto [topoSet, spatialRef] = parseBezierTopoJson(path);
+        m_spatialRef = spatialRef;
 
-        for (const auto& spline : splines) {
-            if (spline.empty()) continue;
-            auto lastV = getVertex(spline.curves()[0].source());
-            for (const auto &curve: spline.curves()) {
-                auto targetV = getVertex(curve.target());
-                m_baseGraph.add_edge(lastV, targetV, curve);
-                lastV = targetV;
-            }
-        }
-    } else {
+        m_transform = fitInto(topoSet.bbox(), Rectangle<Inexact>(0, 0, 1000, 1000));
+        m_graphPainting->m_drawSettings.m_trans = m_transform.inverse();
+        m_editGraphPainting->m_drawSettings.m_trans = m_transform.inverse();
+
+        m_toposet = topoSet.transform(m_transform);
+        insertTopoSetIntoGraph(m_toposet, m_baseGraph, m_ignoreBbox->isChecked());
+    }
+    else {
         auto [regionSet, spatialRef] = readRegionSetUsingGDAL(path);
         m_spatialRef = spatialRef;
 
@@ -139,41 +202,8 @@ void BezierSimplificationDemo::loadInput(const std::filesystem::path& path) {
         regionSet = regionSet.transform(m_transform);
 
         snapVertices(regionSet);
-        m_toposet = TopoSet<Inexact>(regionSet);
-
-        auto bboxT = regionSet.bbox();
-
-        for (int i = 0; i < m_toposet.arcs.size(); ++i) {
-            auto& arc = m_toposet.arcs[i];
-            for (auto eit = arc.edges_begin(); eit != arc.edges_end(); ++eit) {
-                auto sourceV = getVertex(eit->source());
-                auto targetV = getVertex(eit->target());
-                auto curve = CubicBezierCurve(sourceV->point(), targetV->point());
-
-                // There should be no duplicates but there are somehow a couple, so we do this for now...
-                bool oppositeExists = false;
-                bool alreadyExists = false;
-                for (auto ieit = targetV->incident_edges_begin(); ieit != targetV->incident_edges_end(); ++ieit) {
-                    if ((*ieit)->target() == sourceV && (*ieit)->curve() == curve.reversed()) {
-                        oppositeExists = true;
-                        std::cout << "Found an opposite edge!" << std::endl;
-                        break;
-                    }
-                    if ((*ieit)->source() == sourceV && (*ieit)->curve() == curve) {
-                        alreadyExists = true;
-                        std::cout << "Found a duplicate edge!" << std::endl;
-                        break;
-                    }
-                }
-
-                if (!oppositeExists && !alreadyExists) {
-                    auto eh = m_baseGraph.add_edge(sourceV, targetV, curve);
-                    eh->data().index = i;
-                    bool edgeOnBbox = m_ignoreBbox->isChecked() && liesOnBbox(sourceV->point(), bboxT) && liesOnBbox(targetV->point(), bboxT);
-                    eh->data().collapse_allowed = !edgeOnBbox;
-                }
-            }
-        }
+        m_toposet = bezierTopoSetFromStraightTopoSet(regionSetToTopoSet(regionSet));
+        insertTopoSetIntoGraph(m_toposet, m_baseGraph, m_ignoreBbox->isChecked());
     }
 
     m_baseGraph.orient();
@@ -486,14 +516,17 @@ void BezierSimplificationDemo::addIOTab() {
 
     connect(exportButton, &QPushButton::clicked, [this, stackPolygons]() {
         QString startDir = ".";
-        std::filesystem::path filePath = QFileDialog::getSaveFileName(this, tr("Select isolines"), startDir).toStdString();
+        std::filesystem::path filePath = QFileDialog::getSaveFileName(this, tr("Select folder to create a folder with .shp and auxiliary files."), startDir).toStdString();
         if (filePath.empty()) return;
-        if (m_editBaseGraph.number_of_vertices() > 0) {
-            saveGraphIntoTopoSet(m_editBaseGraph, m_toposet);
-        } else {
-            saveGraphIntoTopoSet(m_baseGraph, m_toposet);
-        }
-        exportTopoSetUsingGDAL(filePath, m_toposet, m_transform.inverse(), m_spatialRef, stackPolygons->isChecked());
+
+        std::ofstream out(filePath / "beziers.txt");
+
+        auto& theBaseGraph = m_editBaseGraph.number_of_edges() > 0 ? m_editBaseGraph : m_baseGraph;
+
+        saveGraphIntoTopoSet(theBaseGraph, m_toposet);
+        std::string jsonFileName = filePath.stem().string() + ".json";
+        exportTopoSetToJson(filePath / jsonFileName, m_toposet.transform(m_transform.inverse()), m_spatialRef);
+        exportTopoSetUsingGDAL(filePath, approximate(m_toposet), m_transform.inverse(), m_spatialRef, stackPolygons->isChecked());
     });
 
     connect(m_editControlPoints, &QCheckBox::stateChanged, [this]() {
@@ -889,8 +922,9 @@ void BezierSimplificationDemo::addMinimumDistanceTab() {
     });
 
     connect(mdReconstructButton, &QPushButton::clicked, [this]() {
-        m_beforeReconstruct = m_baseGraph;
-        m_baseGraph = reconstructBezierGraph(m_forcer.m_g, m_minDist->value() / getScale() * m_minDist->value() / getScale() / 16);
+        auto& theBaseGraph = m_editBaseGraph.number_of_edges() > 0 ? m_editBaseGraph : m_baseGraph;
+        m_beforeReconstruct = theBaseGraph;
+        theBaseGraph = reconstructBezierGraph(m_forcer.m_g, m_minDist->value() / getScale() * m_minDist->value() / getScale() / 16);
         m_forcer.m_g.clear();
         m_forcer.m_withinDistEdgeComponents.clear();
         m_forcer.m_delaunay.clear();
@@ -899,7 +933,8 @@ void BezierSimplificationDemo::addMinimumDistanceTab() {
     });
 
     connect(undoReconstructButton, &QPushButton::clicked, [this]() {
-        m_baseGraph = m_beforeReconstruct;
+        auto& theBaseGraph = m_editBaseGraph.number_of_edges() > 0 ? m_editBaseGraph : m_baseGraph;
+        theBaseGraph = m_beforeReconstruct;
         m_renderer->repaint();
     });
 }
@@ -1002,6 +1037,12 @@ void BezierSimplificationDemo::addDrawingTab() {
 double BezierSimplificationDemo::getScale() const {
     auto unitXT = Vector<Inexact>(1, 0).transform(m_transform.inverse());
     return unitXT.x();
+}
+
+double BezierSimplificationDemo::screenDistanceToMouse2(const Point<Inexact>& p) const {
+    auto mp = m_renderer->mousePosition();
+    auto diff = m_renderer->convertPoint(p) - m_renderer->convertPoint(mp);
+    return diff.x() * diff.x() + diff.y() * diff.y();
 }
 
 void BezierSimplificationDemo::addPaintings() {
@@ -1132,34 +1173,72 @@ void BezierSimplificationDemo::addPaintings() {
         auto inv = m_transform.inverse();
         if (!m_editControlPoints->isChecked()) return;
 
+        auto mp = m_renderer->mousePosition();
+
+        int nearestArc = 0;
+        double minD2 = std::numeric_limits<double>::infinity();
+
+        // Find nearest control polyline
+        for (auto eit = m_editBaseGraph.edges_begin(); eit != m_editBaseGraph.edges_end(); ++eit) {
+            auto mpT = mp.transform(m_transform);
+            Polyline<Inexact> pl;
+            for (int c = 0; c < 4; ++c) pl.push_back(eit->curve().control(c));
+            auto n = pl.nearest(mpT);
+            auto d2 = CGAL::squared_distance(n, mpT);
+            if (d2 < minD2) {
+                nearestArc = eit->data().index;
+                minD2 = d2;
+            }
+        }
+
+        renderer.setStrokeOpacity(255);
+        renderer.setStroke(Color(0, 0, 0), 4);
+        renderer.setMode(GeometryRenderer::stroke);
+        for (auto eit = m_editBaseGraph.edges_begin(); eit != m_editBaseGraph.edges_end(); ++eit) {
+            if (eit->data().index == nearestArc) {
+                renderer.draw(eit->curve().transform(inv));
+            }
+        }
+
         // Control polylines
         for (auto eit = m_editBaseGraph.edges_begin(); eit != m_editBaseGraph.edges_end(); ++eit) {
             renderer.setStroke(Color(0, 255, 0), 1.0);
             Polyline<Inexact> pl;
             for (int c = 0; c < 4; ++c) pl.push_back(eit->curve().control(c));
+            auto opacity = eit->data().index == nearestArc ? 255 : 50;
+            renderer.setStrokeOpacity(opacity);
             renderer.draw(pl.transform(inv));
         }
 
         for (const auto& editable : m_editables) {
+            auto point = editable->point().transform(inv);
+
+            int opacity = 50;
             if (auto vhP = std::get_if<Vertex_handle>(&editable->type)) {
                 renderer.setStroke(Color(255, 0, 255), 2.0);
-                renderer.draw(editable->point().transform(inv));
+                auto vh = *vhP;
+                if (vh->degree() == 2 && vh->outgoing()->data().index == nearestArc) {
+                    opacity = 255;
+                }
             } else if (auto eiP = std::get_if<std::pair<Edge_handle, bool>>(&editable->type)) {
                 renderer.setStroke(Color(0, 0, 255), 2.0);
                 auto [eh, b] = *eiP;
-                if (b) {
-                    renderer.draw(editable->point().transform(inv));
-                } else {
-                    renderer.draw(editable->point().transform(inv));
+                if (eh->data().index == nearestArc) {
+                    opacity = 255;
                 }
             }
+            renderer.setStrokeOpacity(opacity);
+            renderer.draw(point);
         }
+        renderer.setStrokeOpacity(255);
     }, "Control points");
 
     m_renderer->addPainting([this](GeometryRenderer& renderer) {
         if (!m_shiftDown && !m_altDown) return;
         if (!m_editControlPoints->isChecked()) return;
         auto mp = m_renderer->mousePosition();
+        
+        auto inv = m_transform.inverse();
 
         if (m_shiftDown) {
             // naive...
@@ -1168,8 +1247,8 @@ void BezierSimplificationDemo::addPaintings() {
             double minDist = std::numeric_limits<double>::infinity();
             for (auto eit = m_editBaseGraph.edges_begin(); eit != m_editBaseGraph.edges_end(); ++eit) {
                 auto n = eit->curve().nearest(mp.transform(m_transform));
-                auto diff = m_renderer->convertPoint(n.point) - m_renderer->convertPoint(mp.transform(m_transform));
-                auto d2 = diff.x() * diff.x() + diff.y() * diff.y();
+                auto d2 = screenDistanceToMouse2(n.point.transform(inv));
+                
                 if (d2 < minDist && d2 < 400) {
                     minDist = d2;
                     nearest = n;
@@ -1189,8 +1268,7 @@ void BezierSimplificationDemo::addPaintings() {
             double minDist = std::numeric_limits<double>::infinity();
             for (auto vit = m_editBaseGraph.vertices_begin(); vit != m_editBaseGraph.vertices_end(); ++vit) {
                 if (vit->degree() != 2) continue;
-                auto diff = m_renderer->convertPoint(vit->point()) - m_renderer->convertPoint(mp.transform(m_transform));
-                auto d2 = diff.x() * diff.x() + diff.y() * diff.y();
+                auto d2 = screenDistanceToMouse2(vit->point().transform(inv));
                 if (d2 < minDist && d2 < 400) {
                     minDist = d2;
                     closest = vit;
@@ -1337,7 +1415,7 @@ void BezierSimplificationDemo::checkIntersections() {
             if (other == eit) return false;
 
             if (other->curve().sub(0.01, 0.99).intersects(eit->curve())) {
-                std::cout << "Found intersection!" << std::endl;
+                std::cout << "Found intersection! " << other->curve().source().transform(inv) << " -> " << other->curve().target().transform(inv) << " and " << eit->curve().source().transform(inv) << " -> " << eit->curve().target().transform(inv) << std::endl;
                 r.draw(eit->curve().transform(inv));
                 r.draw(other->curve().transform(inv));
                 return true;

@@ -47,6 +47,18 @@ OGRMultiPolygon polygonSetToOGRMultiPolygonT(const PolygonSet<Inexact>& polygonS
     return ogrMultiPolygon;
 }
 
+OGRMultiPolygon polygonSetRawToOGRMultiPolygonT(const PolygonSetRaw<Inexact>& polygonSetRaw, const CGAL::Aff_transformation_2<Inexact>& trans) {
+    const std::vector<PolygonWithHoles<Inexact>>& pgns = polygonSetRaw.polygons_with_holes;
+
+    OGRMultiPolygon ogrMultiPolygon;
+    for (const auto& pgn : pgns) {
+        auto ogrPolygon = polygonWithHolesToOGRPolygonT(pgn, trans);
+        ogrMultiPolygon.addGeometry(&ogrPolygon);
+    }
+
+    return ogrMultiPolygon;
+}
+
 Straight_graph_2<std::monostate, std::monostate, Inexact> readGraphUsingGDAL(const std::filesystem::path& path) {
     GDALAllRegister();
     GDALDataset *poDS;
@@ -214,7 +226,9 @@ std::pair<RegionSet<Inexact>, OGRSpatialReference> readRegionSetUsingGDAL(const 
 }
 
 // mixed geometries is a problem, we assume here toposet contains only PolygonSet geometries.
-void exportTopoSetUsingGDAL(const std::filesystem::path& path, const TopoSet<Inexact> topoSet, const CGAL::Aff_transformation_2<Inexact>& trans, std::optional<OGRSpatialReference> spatialReference, bool stackPolygons) {
+void exportTopoSetUsingGDAL(const std::filesystem::path& path, const StraightTopoSet<Inexact> topoSet, const CGAL::Aff_transformation_2<Inexact>& trans, std::optional<OGRSpatialReference> spatialReference, bool stackPolygons) {
+    using PolygonSetTopology = StraightTopoSet<Inexact>::PolygonSetTopology;
+    
     const char *pszDriverName = "ESRI Shapefile";
     GDALDriver *poDriver;
 
@@ -238,7 +252,8 @@ void exportTopoSetUsingGDAL(const std::filesystem::path& path, const TopoSet<Ine
 
     OGRLayer *poLayer;
 
-    poLayer = poDS->CreateLayer( "regions", spatialReference.has_value() ? &*spatialReference : nullptr, wkbMultiPolygon, NULL );
+    auto layerName = path.stem().string();
+    poLayer = poDS->CreateLayer(layerName.c_str(), spatialReference.has_value() ? &*spatialReference : nullptr, wkbMultiPolygon, NULL);
     if( poLayer == NULL )
     {
         printf( "Layer creation failed.\n" );
@@ -269,9 +284,9 @@ void exportTopoSetUsingGDAL(const std::filesystem::path& path, const TopoSet<Ine
 
     if (!stackPolygons) {
         for (const auto &feature: topoSet.features) {
-            auto psg = get<TopoSet<Inexact>::PolygonSetGeometry>(feature.geometry);
-            auto ps = psg.getGeometry(topoSet);
-            auto mPgn = polygonSetToOGRMultiPolygonT(ps, trans);
+            auto psg = get<PolygonSetTopology>(feature.topology);
+            auto ps = psg.getGeometry<Inexact>(topoSet);
+            auto mPgn = polygonSetRawToOGRMultiPolygonT(ps, trans);
             OGRFeature *poFeature;
 
             poFeature = OGRFeature::CreateFeature(poLayer->GetLayerDefn());
@@ -297,23 +312,20 @@ void exportTopoSetUsingGDAL(const std::filesystem::path& path, const TopoSet<Ine
             OGRFeature::DestroyFeature(poFeature);
         }
     } else {
-        /*OGRFieldDefn oField("stacking", OFTInteger);
-        if (poLayer->CreateField(&oField) != OGRERR_NONE) {
-            printf("Creating field failed.\n");
-            exit(1);
-        }*/
+        std::vector<std::tuple<PolygonSetRaw<Inexact>, RegionAttributes, int>> entries;
 
-        std::vector<std::tuple<PolygonSet<Inexact>, RegionAttributes, int>> entries;
-
+        //auto bbox = topoSet.bbox();
         for (const auto &feature: topoSet.features) {
-            auto psg = get<TopoSet<Inexact>::PolygonSetGeometry>(feature.geometry);
-            auto ps = psg.getGeometry(topoSet);
-            PolygonSet <Inexact> transformed;
-            std::vector <PolygonWithHoles<Inexact>> pgsWHs;
-            ps.polygons_with_holes(std::back_inserter(pgsWHs));
+            auto psg = get<PolygonSetTopology>(feature.topology);
+            auto ps = psg.getGeometry<Inexact>(topoSet);
+            PolygonSetRaw <Inexact> transformed;
+            const std::vector <PolygonWithHoles<Inexact>>& pgsWHs = ps.polygons_with_holes;
             for (const auto &pgnWH: pgsWHs) {
-                auto pgnWHT = transform(trans, pgnWH);
-                transformed.insert(pgnWHT.outer_boundary());
+                //auto pgn = closeAlongBox(pgnWH.outer_boundary(), bbox);
+                auto pgn = pgnWH.outer_boundary();
+                auto pgnT = transform(trans, pgn);
+                PolygonWithHoles<Inexact> outer(pgnT);
+                transformed.polygons_with_holes.push_back(outer);
             }
             entries.emplace_back(transformed, feature.attributes, 0);
         }
@@ -323,10 +335,8 @@ void exportTopoSetUsingGDAL(const std::filesystem::path& path, const TopoSet<Ine
                 if (i == j) continue;
                 auto& [pgs1, _1, d1] = entries[i];
                 auto& [pgs2, _2, d2] = entries[j];
-                std::vector<PolygonWithHoles<Inexact>> pgns1;
-                pgs1.polygons_with_holes(std::back_inserter(pgns1));
-                std::vector<PolygonWithHoles<Inexact>> pgns2;
-                pgs2.polygons_with_holes(std::back_inserter(pgns2));
+                const std::vector<PolygonWithHoles<Inexact>>& pgns1 = pgs1.polygons_with_holes;
+                const std::vector<PolygonWithHoles<Inexact>>& pgns2 = pgs2.polygons_with_holes;
 
                 bool contained = false;
                 for (const auto& pgn1 : pgns1) {
@@ -348,7 +358,7 @@ void exportTopoSetUsingGDAL(const std::filesystem::path& path, const TopoSet<Ine
 
         int index = 0;
         for (const auto& ps : entries) {
-            auto mPgn = polygonSetToOGRMultiPolygon(std::get<0>(ps));
+            auto mPgn = polygonSetRawToOGRMultiPolygonT(std::get<0>(ps), CGAL::IDENTITY);
             OGRFeature *poFeature;
 
             poFeature = OGRFeature::CreateFeature(poLayer->GetLayerDefn());

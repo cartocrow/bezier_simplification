@@ -3,6 +3,7 @@
 #include <cartocrow/renderer/geometry_widget.h>
 #include <cartocrow/widgets/double_slider.h>
 #include "library/core/bezier_graph_2.h"
+#include "library/bezier_topo_set.h"
 #include "library/core/topo_set.h"
 #include "library/core/geometry_set.h"
 #include "library/bezier_collapse.h"
@@ -216,12 +217,12 @@ public:
         const auto& m_showArcIndex = m_drawSettings.m_showArcIndex;
 
         renderer.setMode(GeometryRenderer::stroke);
-        renderer.setStroke(Color(0, 0, 0), 2.0);
+        renderer.setStroke(Color(0, 0, 0), 1.5);
         for (auto eit = m_graph.edges_begin(); eit != m_graph.edges_end(); ++eit) {
 //            if (m_showDebugInfo->isChecked() && eit->data().collapse.has_value()) {
 //                renderer.setStroke(Color(50, 200, 50), 2.0);
 //            } else {
-            renderer.setStroke(Color(0, 0, 0), 2.0);
+            renderer.setStroke(Color(0, 0, 0), 1.5);
 //            }
             renderer.draw(eit->curve().transform(m_trans));
             if (m_showEdgeDirection) {
@@ -243,10 +244,10 @@ public:
             }
             // Control points
             for (auto eit = m_graph.edges_begin(); eit != m_graph.edges_end(); ++eit) {
-                renderer.setStroke(Color(0, 0, 255), 2.0);
+                renderer.setStroke(Color(0, 0, 255), 1.5);
                 renderer.draw(eit->curve().sourceControl().transform(m_trans));
                 renderer.draw(eit->curve().targetControl().transform(m_trans));
-                renderer.setStroke(Color(255, 0, 255), 2.0);
+                renderer.setStroke(Color(255, 0, 255), 1.5);
                 renderer.draw(eit->curve().source().transform(m_trans));
                 renderer.draw(eit->curve().target().transform(m_trans));
             }
@@ -273,7 +274,7 @@ class BezierSimplificationDemo : public QMainWindow {
 	Collapse m_collapse;
     std::optional<Edge_handle> m_debugEdge;
     BaseGraph m_original;
-    TopoSet<Inexact> m_toposet;
+    BezierTopoSet m_toposet;
     CGAL::Aff_transformation_2<Inexact> m_transform;
     CGAL::Aff_transformation_2<Inexact> m_backupTransform;
     OGRSpatialReference m_spatialRef;
@@ -349,6 +350,7 @@ class BezierSimplificationDemo : public QMainWindow {
     void checkIntersections();
     void updateEditables();
     double getScale() const;
+    double screenDistanceToMouse2(const Point<Inexact>& p) const;
 
     void keyPressEvent(QKeyEvent *event) override;
     void keyReleaseEvent(QKeyEvent *event) override;

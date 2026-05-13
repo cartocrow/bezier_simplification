@@ -3,7 +3,6 @@
 #include "conic_types.h"
 #include "intersection_helpers.h"
 #include "schneider.h"
-#include "steven_bezier_collapse.h"
 
 #include <cartocrow/core/core.h>
 #include <cartocrow/core/vector_helpers.h>
@@ -851,6 +850,9 @@ class MinimumDistanceForcer {
         m_loops.clear();
         m_edgeToLoop.clear();
         m_vertexToLoop.clear();
+        m_originalSegments.resize(m_g.number_of_edges());
+        m_edgeToLoop.resize(m_g.number_of_edges());
+        m_vertexToLoop.resize(m_g.number_of_vertices());
 
         std::unordered_set<const typename StraightGraph::Edge*> seen;
 

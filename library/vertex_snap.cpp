@@ -26,6 +26,34 @@ struct RegionSetVertexPQTTraits {
 
 static_assert(data_structures::PointQuadTreeTraits<RegionSetVertexPQTTraits>);
 
+void removeDuplicates(Polygon<Inexact>& p) {
+    auto start = p.vertices_circulator();
+    auto vit = start;
+    do {
+        auto next = vit;
+        ++next;
+
+        if (*vit == *next) {
+            vit = p.erase(vit);
+        }
+
+        ++vit;
+    } while (vit != start);
+}
+
+void removeDuplicates(RegionSet<Inexact>& regionSet) {
+    for (int regionIndex = 0; regionIndex < regionSet.regions.size(); ++regionIndex) {
+        auto& pgnWHs = regionSet.regions[regionIndex].geometry.polygons_with_holes;
+        for (int polygonIndex = 0; polygonIndex < pgnWHs.size(); ++polygonIndex) {
+            auto& pgnWH = pgnWHs[polygonIndex];
+            removeDuplicates(pgnWH.outer_boundary());
+            for (auto& hole : pgnWH.holes()) {
+                removeDuplicates(hole);
+            }
+        }
+    }
+}
+
 void snapVertices(RegionSet<Inexact>& regionSet, std::optional<double> epsilon) {
 	using namespace cartocrow::data_structures;
 	auto bbox = regionSet.bbox();
@@ -89,5 +117,7 @@ void snapVertices(RegionSet<Inexact>& regionSet, std::optional<double> epsilon) 
             rsVertex.point() = closest->point();
         }
     }
+
+    removeDuplicates(regionSet);
 }
 }

@@ -2,6 +2,9 @@
 #include "library/steven_bezier_collapse.h"
 #include <cartocrow/data_structures/straight_graph_2.h>
 #include "library/read_ipe_bezier_spline.h"
+#include "library/sym_diff.h"
+#include "library/vertex_snap.h"
+#include <random>
 
 using namespace cartocrow;
 using namespace cartocrow::curved_simplification;
@@ -96,4 +99,36 @@ TEST_CASE("Copy a graph") {
     delete g;
 
     checkGraph(copy);
+}
+
+TEST_CASE("Symmetric difference of two Bézier splines with common endpoints") {
+    std::random_device dev;
+    std::mt19937 rng(dev());
+    std::uniform_int_distribution<std::mt19937::result_type> dist6(0, 1);
+
+    for (int i = 0; i < 10; ++i) {
+        CubicBezierSpline spline1;
+        spline1.appendCurve({ 0, 0 }, { dist6(rng), dist6(rng) }, { dist6(rng), dist6(rng) }, { 1.5, 1.5 });
+        CubicBezierSpline spline2;
+        spline2.appendCurve({ 0, 0 }, { dist6(rng), dist6(rng) }, { dist6(rng), dist6(rng) }, { 1.5, 1.5 });
+
+        CHECK(abs(symmetricDifference(spline1, spline2) - symmetricDifferenceArrangement(spline1, spline2, 10000)) < 0.001);
+    }
+}
+
+TEST_CASE("Remove duplicates") {
+    Polygon<Inexact> p;
+    p.push_back({ 0, 0 });
+    p.push_back({ 1, 0 });
+    p.push_back({ 1, 0 });
+    p.push_back({ 1, 1 });
+    p.push_back({ 0, 1 });
+    
+    removeDuplicates(p);
+
+    CHECK(p.size() == 4);
+    CHECK(p.vertex(0) == Point<Inexact>{0, 0});
+    CHECK(p.vertex(1) == Point<Inexact>{1, 0});
+    CHECK(p.vertex(2) == Point<Inexact>{1, 1});
+    CHECK(p.vertex(3) == Point<Inexact>{0, 1});
 }

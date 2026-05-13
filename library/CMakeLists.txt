@@ -8,7 +8,10 @@ set(SHARED_SOURCES
     spiro_helpers/bezctx_cbs.cpp
     intersection_helpers.cpp
     vertex_snap.cpp
-
+    sym_diff.cpp
+    bezier_helpers.cpp
+    bezier_topo_set.cpp
+    topojson_export.cpp
 )
 set(SHARED_HEADERS
     common.h
@@ -30,6 +33,11 @@ set(SHARED_HEADERS
     conic_types.h
     intersection_helpers.h
     vertex_snap.h
+    sym_diff.h
+    topojson_export.h
+    bezier_helpers.h
+    bezier_topo_set.h
+    topojson_export.h
 
     spiro_helpers/spiro/bezctx.h
     spiro_helpers/spiro/bezctx_intf.h
@@ -84,8 +92,6 @@ target_link_libraries(curved_simplification
         cartocrow::core
         cartocrow::renderer
         cartocrow::circle_segment_helpers
-
-        GDAL::GDAL
 )
 endif()
 

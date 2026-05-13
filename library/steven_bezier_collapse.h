@@ -2,9 +2,11 @@
 
 #include "bezier_collapse.h"
 #include "schneider.h"
+#include "bezier_helpers.h"
 #include "spiro_helpers/spiro_helpers.h"
 
 #include <cartocrow/core/arrangement_helpers.h>
+#include "sym_diff.h"
 
 #define DEBUG_COLLAPSE 0
 
@@ -19,11 +21,6 @@ CubicBezierCurve
 createCubicBezierFromPolar(Point<Inexact> p0, Direction<Inexact> t0Dir, Number<Inexact> d0,
 						   Direction<Inexact> t1Dir, Number<Inexact> d1, Point<Inexact> p3);
 Number<Inexact> length(const Polyline<Inexact>& pl);
-bool isStraight(const CubicBezierCurve& curve);
-// Whether curve c1 connects smoothly to curve c2: whether the end tangent of c1 aligns approximately with the
-// start tangents of c2
-bool connectsSmoothlyTo(const CubicBezierCurve& c1, const CubicBezierCurve& c2);
-bool isSmooth(const CubicBezierSpline& spline);
 
 template <typename BG> struct StevenBCTraits {
 	int tSteps;
@@ -471,26 +468,16 @@ private:
     }
 
     double evaluateSymDiff(const CubicBezierSpline& beforeSpline, const CubicBezierSpline& afterSpline) {
-        auto beforePlE = pretendExact(beforeSpline.polyline(symDiffSegs));
-        auto afterPlE = pretendExact(afterSpline.polyline(symDiffSegs));
-        Arrangement<Exact> arr;
-        std::vector<Arrangement<Exact>::X_monotone_curve_2> beforePlXMCurves;
-        for (auto eit = beforePlE.edges_begin(); eit != beforePlE.edges_end(); ++eit) {
-            beforePlXMCurves.emplace_back(*eit);
-        }
-        CGAL::insert_non_intersecting_curves(arr, beforePlXMCurves.begin(), beforePlXMCurves.end());
-        CGAL::insert(arr, afterPlE.edges_begin(), afterPlE.edges_end());
+        return symmetricDifferenceArrangement(beforeSpline, afterSpline, symDiffSegs);
+        //return symmetricDifference(beforeSpline, afterSpline);
 
-        double symDiffErr = 0;
-        for (auto fit = arr.faces_begin(); fit != arr.faces_end(); ++fit) {
-            if (fit->is_unbounded()) continue;
-            auto pwh = approximate(face_to_polygon_with_holes<Exact>(fit));
-            symDiffErr += abs(pwh.outer_boundary().area());
-            for (const auto& h : pwh.holes()) {
-                symDiffErr -= abs(h.area());
-            }
-        }
-        return symDiffErr;
+        //double sum = 0;
+        //for (int i = 0; i <= 20; ++i) {
+        //    auto p1 = beforeSpline.position(beforeSpline.parameter(i / 20.0));
+        //    auto p2 = afterSpline.position(afterSpline.parameter(i / 20.0));
+        //    sum += CGAL::squared_distance(p1, p2);
+        //}
+        //return sum;
     }
 
 public:
