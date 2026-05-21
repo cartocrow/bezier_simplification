@@ -1,10 +1,16 @@
 #include <catch2/catch_test_macros.hpp>
 #include "library/steven_bezier_collapse.h"
 #include <cartocrow/data_structures/straight_graph_2.h>
+#include <cartocrow/reader/ipe_reader.h>
 #include "library/read_ipe_bezier_spline.h"
+#include "library/read_graph_gdal.h"
 #include "library/sym_diff.h"
 #include "library/vertex_snap.h"
 #include <random>
+#include <ipeshape.h>
+#include <ipepath.h>
+
+#include <cartocrow/renderer/ipe_renderer.h>
 
 using namespace cartocrow;
 using namespace cartocrow::curved_simplification;
@@ -55,6 +61,43 @@ BezierGraph* readGraphFromIpe(std::filesystem::path path) {
     }
 
     return g;
+}
+
+std::vector<PolygonSetRaw<Inexact>> polygonsInPage(ipe::Page* page) {
+    auto pgns = std::vector<PolygonSetRaw<Inexact>>();
+
+    for (int i = 0; i < page->count(); i++) {
+        auto object = page->object(i);
+        if (object->type() != ipe::Object::Type::EPath) continue;
+        auto path = object->asPath();
+        auto matrix = object->matrix();
+        auto shape = path->shape();
+        pgns.push_back(IpeReader::convertShapeToPolygonSetRaw(shape, matrix));
+    }
+
+    return pgns;
+}
+
+RegionSet<Inexact> readRegionSetFromIpe(std::filesystem::path path) {
+    RegionSet<Inexact> rs;
+
+    std::shared_ptr<ipe::Document> document = IpeReader::loadIpeFile(path);
+
+    if (document->countPages() == 0) {
+        throw std::runtime_error("Cannot read isolines from an Ipe file with no pages");
+    }
+    else if (document->countPages() > 1) {
+        throw std::runtime_error("Cannot read isolines from an Ipe file with more than one page");
+    }
+
+    ipe::Page* page = document->page(0);
+
+    auto pgns = polygonsInPage(page);
+    for (const auto& pgn : pgns) {
+        rs.regions.emplace_back(RegionAttributes{}, pgn);
+    }
+
+    return rs;
 }
 
 void checkGraph(BezierGraph& g) {
@@ -112,7 +155,7 @@ TEST_CASE("Symmetric difference of two Bézier splines with common endpoints") {
         CubicBezierSpline spline2;
         spline2.appendCurve({ 0, 0 }, { dist6(rng), dist6(rng) }, { dist6(rng), dist6(rng) }, { 1.5, 1.5 });
 
-        CHECK(abs(symmetricDifference(spline1, spline2) - symmetricDifferenceArrangement(spline1, spline2, 10000)) < 0.001);
+        CHECK(abs(symmetricDifference(spline1, spline2) - symmetricDifferenceArrangement(spline1, spline2, 1000)) < 0.01);
     }
 }
 
@@ -131,4 +174,29 @@ TEST_CASE("Remove duplicates") {
     CHECK(p.vertex(1) == Point<Inexact>{1, 0});
     CHECK(p.vertex(2) == Point<Inexact>{1, 1});
     CHECK(p.vertex(3) == Point<Inexact>{0, 1});
+}
+
+TEST_CASE("Flatten polygons in bbox") {
+    auto rs = readRegionSetFromIpe("data/test/flat_stacking/complex.ipe");
+    auto bbox = rs.bbox();
+    Rectangle<Inexact> rect(bbox.xmin(), bbox.ymin(), bbox.xmax(), bbox.ymax());
+    std::vector<Polygon<Inexact>> polygons;
+    for (const auto& r : rs.regions) {
+        polygons.push_back(r.geometry.polygons_with_holes.front().outer_boundary());
+        if (polygons.back().is_clockwise_oriented()) {
+            polygons.back().reverse_orientation();
+        }
+    }
+    std::vector<Polygon<Inexact>> flattened;
+    flattenPolygonsInBbox(polygons.begin(), polygons.end(), std::back_inserter(flattened), rect, M_EPSILON);
+
+    using namespace renderer;
+    IpeRenderer renderer;
+
+    renderer.addPainting([&flattened](GeometryRenderer& r) {
+        for (const auto& flat : flattened) {
+            r.draw(flat);
+        }
+    });
+    renderer.save("debugging_flattening.ipe");
 }

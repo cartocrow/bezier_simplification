@@ -945,6 +945,8 @@ void BezierSimplificationDemo::addDrawingTab() {
     auto* vLayout = new QVBoxLayout(drawSettings);
     vLayout->setAlignment(Qt::AlignTop);
 
+    m_editHighlight = new QCheckBox("Edit highglighting");
+    vLayout->addWidget(m_editHighlight);
     auto showEdgeDirection = new QCheckBox("Show edge direction");
     vLayout->addWidget(showEdgeDirection);
     m_showOldVertices = new QCheckBox("Show old vertices");
@@ -1175,28 +1177,30 @@ void BezierSimplificationDemo::addPaintings() {
 
         auto mp = m_renderer->mousePosition();
 
-        int nearestArc = 0;
+        int nearestArc = -1;
         double minD2 = std::numeric_limits<double>::infinity();
 
-        // Find nearest control polyline
-        for (auto eit = m_editBaseGraph.edges_begin(); eit != m_editBaseGraph.edges_end(); ++eit) {
-            auto mpT = mp.transform(m_transform);
-            Polyline<Inexact> pl;
-            for (int c = 0; c < 4; ++c) pl.push_back(eit->curve().control(c));
-            auto n = pl.nearest(mpT);
-            auto d2 = CGAL::squared_distance(n, mpT);
-            if (d2 < minD2) {
-                nearestArc = eit->data().index;
-                minD2 = d2;
+        if (m_editHighlight->isChecked()) {
+            // Find nearest control polyline
+            for (auto eit = m_editBaseGraph.edges_begin(); eit != m_editBaseGraph.edges_end(); ++eit) {
+                auto mpT = mp.transform(m_transform);
+                Polyline<Inexact> pl;
+                for (int c = 0; c < 4; ++c) pl.push_back(eit->curve().control(c));
+                auto n = pl.nearest(mpT);
+                auto d2 = CGAL::squared_distance(n, mpT);
+                if (d2 < minD2) {
+                    nearestArc = eit->data().index;
+                    minD2 = d2;
+                }
             }
-        }
 
-        renderer.setStrokeOpacity(255);
-        renderer.setStroke(Color(0, 0, 0), 4);
-        renderer.setMode(GeometryRenderer::stroke);
-        for (auto eit = m_editBaseGraph.edges_begin(); eit != m_editBaseGraph.edges_end(); ++eit) {
-            if (eit->data().index == nearestArc) {
-                renderer.draw(eit->curve().transform(inv));
+            renderer.setStrokeOpacity(255);
+            renderer.setStroke(Color(0, 0, 0), 4);
+            renderer.setMode(GeometryRenderer::stroke);
+            for (auto eit = m_editBaseGraph.edges_begin(); eit != m_editBaseGraph.edges_end(); ++eit) {
+                if (eit->data().index == nearestArc) {
+                    renderer.draw(eit->curve().transform(inv));
+                }
             }
         }
 
@@ -1205,7 +1209,7 @@ void BezierSimplificationDemo::addPaintings() {
             renderer.setStroke(Color(0, 255, 0), 1.0);
             Polyline<Inexact> pl;
             for (int c = 0; c < 4; ++c) pl.push_back(eit->curve().control(c));
-            auto opacity = eit->data().index == nearestArc ? 255 : 50;
+            auto opacity = nearestArc == -1 || eit->data().index == nearestArc ? 255 : 50;
             renderer.setStrokeOpacity(opacity);
             renderer.draw(pl.transform(inv));
         }
@@ -1217,13 +1221,13 @@ void BezierSimplificationDemo::addPaintings() {
             if (auto vhP = std::get_if<Vertex_handle>(&editable->type)) {
                 renderer.setStroke(Color(255, 0, 255), 2.0);
                 auto vh = *vhP;
-                if (vh->degree() == 2 && vh->outgoing()->data().index == nearestArc) {
+                if (vh->degree() == 2 && (nearestArc == -1 || vh->outgoing()->data().index == nearestArc)) {
                     opacity = 255;
                 }
             } else if (auto eiP = std::get_if<std::pair<Edge_handle, bool>>(&editable->type)) {
                 renderer.setStroke(Color(0, 0, 255), 2.0);
                 auto [eh, b] = *eiP;
-                if (eh->data().index == nearestArc) {
+                if (nearestArc == -1 || eh->data().index == nearestArc) {
                     opacity = 255;
                 }
             }

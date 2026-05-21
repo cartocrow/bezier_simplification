@@ -819,13 +819,13 @@ class MinimumDistanceForcer {
         std::vector<std::vector<typename SDG::Edge>> components;
         bfsOnVoronoiEdges(m_delaunay, [&](const typename SDG::Edge& e) {
             if (filterVoronoiEdge(e)) return false;
-            return minDist(m_delaunay, e).first <= m_requiredMinDist;
+            return minDist(m_delaunay, e).first <= m_requiredMinDist / 2;
         }, std::back_inserter(components));
 
         for (const auto& comp : components) {
             std::vector<std::pair<VoronoiEdge, typename SDG::Edge>> component;
             for (const auto& e : comp) {
-                auto vorEdge = *withinDist(m_delaunay, e, m_requiredMinDist);
+                auto vorEdge = *withinDist(m_delaunay, e, m_requiredMinDist / 2);
                 component.push_back({vorEdge, e});
 
                 // project vorEdge on the sites.

@@ -312,57 +312,49 @@ void exportTopoSetUsingGDAL(const std::filesystem::path& path, const StraightTop
             OGRFeature::DestroyFeature(poFeature);
         }
     } else {
-        std::vector<std::tuple<PolygonSetRaw<Inexact>, RegionAttributes, int>> entries;
+        struct PolygonWithAttributes {
+            Polygon<Inexact> poly;
+            RegionAttributes attrs;
+            using PolygonLike = PolygonWithAttributes;
 
-        //auto bbox = topoSet.bbox();
+            static const Polygon<Inexact>& polygon(const PolygonWithAttributes& obj) {
+                return obj.poly;
+            }
+
+            static const PolygonLike changePolygon(const PolygonWithAttributes& obj, Polygon<Inexact> newPoly) {
+                auto copy = obj;
+                copy.poly = newPoly;
+                return copy;
+            }
+        };
+
+        std::vector<PolygonWithAttributes> entries;
+
+        auto bbox = topoSet.bbox();
         for (const auto &feature: topoSet.features) {
             auto psg = get<PolygonSetTopology>(feature.topology);
             auto ps = psg.getGeometry<Inexact>(topoSet);
             PolygonSetRaw <Inexact> transformed;
             const std::vector <PolygonWithHoles<Inexact>>& pgsWHs = ps.polygons_with_holes;
             for (const auto &pgnWH: pgsWHs) {
-                //auto pgn = closeAlongBox(pgnWH.outer_boundary(), bbox);
                 auto pgn = pgnWH.outer_boundary();
-                auto pgnT = transform(trans, pgn);
-                PolygonWithHoles<Inexact> outer(pgnT);
-                transformed.polygons_with_holes.push_back(outer);
-            }
-            entries.emplace_back(transformed, feature.attributes, 0);
-        }
-
-        for (int i = 0; i < entries.size(); ++i) {
-            for (int j = 0; j < entries.size(); ++j) {
-                if (i == j) continue;
-                auto& [pgs1, _1, d1] = entries[i];
-                auto& [pgs2, _2, d2] = entries[j];
-                const std::vector<PolygonWithHoles<Inexact>>& pgns1 = pgs1.polygons_with_holes;
-                const std::vector<PolygonWithHoles<Inexact>>& pgns2 = pgs2.polygons_with_holes;
-
-                bool contained = false;
-                for (const auto& pgn1 : pgns1) {
-                    for (const auto& pgn2 : pgns2) {
-                        if (pgn2.outer_boundary().has_on_bounded_side(pgn1.outer_boundary().vertex(0))) {
-                            contained = true;
-                            ++d1;
-                            break;
-                        }
-                    }
-                    if (contained) break;
-                }
+                entries.emplace_back(pgn, feature.attributes);
             }
         }
 
-        std::sort(entries.begin(), entries.end(), [](const auto& a, const auto& b) {
-            return std::get<2>(a) < std::get<2>(b);
-        });
+        std::vector<PolygonWithAttributes> flattened;
+        Rectangle<Inexact> bboxRect(bbox.xmin(), bbox.ymin(), bbox.xmax(), bbox.ymax());
+        flattenPolygonsInBbox<PolygonWithAttributes>(entries.begin(), entries.end(), std::back_inserter(flattened), bboxRect, M_EPSILON);
 
         int index = 0;
-        for (const auto& ps : entries) {
-            auto mPgn = polygonSetRawToOGRMultiPolygonT(std::get<0>(ps), CGAL::IDENTITY);
+        for (const auto& ps : flattened) {
+            PolygonSetRaw<Inexact> pgnSet;
+            pgnSet.polygons_with_holes.emplace_back(ps.poly);
+            auto mPgn = polygonSetRawToOGRMultiPolygonT(pgnSet, trans);
             OGRFeature *poFeature;
 
             poFeature = OGRFeature::CreateFeature(poLayer->GetLayerDefn());
-            for (const auto &[attribute, data]: std::get<1>(ps)) {
+            for (const auto &[attribute, data]: ps.attrs) {
                 if (auto vDouble = std::get_if<double>(&data)) {
                     poFeature->SetField(attribute.c_str(), *vDouble);
                 } else if (auto vInt = std::get_if<int>(&data)) {
@@ -373,8 +365,6 @@ void exportTopoSetUsingGDAL(const std::filesystem::path& path, const StraightTop
                     std::cout << "Did not handle attribute value." << std::endl;
                 }
             }
-
-            //poFeature->SetField("stacking", index);
 
             poFeature->SetGeometry(&mPgn);
 
