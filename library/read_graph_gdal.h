@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cartocrow/core/centroid.h>
 #include <cartocrow/core/cubic_bezier.h>
 #include <cartocrow/core/rectangle_helpers.h>
 #include <cartocrow/data_structures/straight_graph_2.h>
