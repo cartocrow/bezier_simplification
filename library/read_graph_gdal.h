@@ -69,8 +69,12 @@ Point<K> pointInsidePolygon(const Polygon<K>& p) {
 template <class PolygonTraits, class InputIterator, class OutputIterator, class K>
 void flattenPolygonsInBbox(InputIterator begin, InputIterator end, OutputIterator out, const Rectangle<K>& bbox, const Number<K>& threshold = 0) {
 	using PolygonLike = PolygonTraits::PolygonLike;
-	std::vector<PolygonLike> bordering;
+	using PolygonLikeWithInfo = std::pair<PolygonLike, std::deque<typename Polygon<K>::Vertex_circulator>>;
+	using BorderingList = std::list<PolygonLikeWithInfo>;
+	BorderingList bordering;
+	std::vector<PolygonLike> borderingHandled;
 	std::vector<PolygonLike> within;
+	
 	for (auto it = begin; it != end; ++it) {
 		bool borderingBbox = false;
 		const auto& p = PolygonTraits::polygon(*it);
@@ -81,53 +85,60 @@ void flattenPolygonsInBbox(InputIterator begin, InputIterator end, OutputIterato
 			}
 		}
 		if (borderingBbox) {
-			bordering.push_back(*it);
+			// Compute degree 3 vertices.
+			// Find degree 3 vertices
+			auto circ = p.vertices_circulator();
+			std::deque<typename Polygon<K>::Vertex_circulator> d3s;
+
+			auto curr = circ;
+
+			auto initialPrev = curr;
+			--initialPrev;
+			bool prevLiesOnBbox = liesOn(*initialPrev, bbox, threshold);
+
+			do {
+				bool currLiesOnBbox = liesOn(*curr, bbox, threshold);
+				auto next = curr;
+				++next;
+				bool nextLiesOnBbox = liesOn(*next, bbox, threshold);
+				if (currLiesOnBbox && (!prevLiesOnBbox || !nextLiesOnBbox)) {
+					d3s.push_back(curr);
+				}
+				prevLiesOnBbox = currLiesOnBbox;
+			} while (++curr != circ);
+
+			assert(d3s.size() % 2 == 0);
+
+			// Ensure that the d3 vertices are ordered such that arc from i to i+1 is the one that may need to change.
+			auto d3sF = d3s.front();
+			auto d3sFN = d3sF;
+			++d3sFN;
+			if (liesOn(*d3sFN, bbox, threshold)) {
+				d3s.pop_front();
+				d3s.push_back(d3sF);
+			}
+
+			bordering.emplace_back(*it, d3s);			
 		}
 		else {
 			within.push_back(*it);
 		}
 	}
 
-	// Sort on decreasing area.
-	std::sort(bordering.begin(), bordering.end(), [](const PolygonLike& p1, const PolygonLike& p2) {
-		return PolygonTraits::polygon(p1).area() > PolygonTraits::polygon(p2).area();
+	auto largestBordering = std::max_element(bordering.begin(), bordering.end(), [](const PolygonLikeWithInfo& p1, const PolygonLikeWithInfo& p2) {
+		return std::abs(PolygonTraits::polygon(p1.first).area()) < std::abs(PolygonTraits::polygon(p2.first).area());
 	});
 
 	std::vector<PolygonLike> newPolygons;
 
-	for (int bpI = 0; bpI < bordering.size(); ++bpI) {
-		const Polygon<K>& bp = PolygonTraits::polygon(bordering[bpI]);
-		auto circ = bp.vertices_circulator();
-		
-		std::deque<typename Polygon<K>::Vertex_circulator> d3s;
-		
-		auto curr = circ;
-		
-		auto initialPrev = curr;
-		--initialPrev;
-		bool prevLiesOnBbox = liesOn(*initialPrev, bbox, threshold);
+	std::stack<typename BorderingList::iterator> s;
+	s.push(largestBordering);
 
-		do {
-			bool currLiesOnBbox = liesOn(*curr, bbox, threshold);
-			auto next = curr;
-			++next;
-			bool nextLiesOnBbox = liesOn(*next, bbox, threshold);
-			if (currLiesOnBbox && (!prevLiesOnBbox || !nextLiesOnBbox)) {
-				d3s.push_back(curr);
-			}
-			prevLiesOnBbox = currLiesOnBbox;
-		} while (++curr != circ);
-		
-		assert(d3s.size() % 2 == 0);
-
-		// Ensure that the d3 vertices are ordered such that arc from i to i+1 is the one that may need to change.
-		auto d3sF = d3s.front();
-		auto d3sFN = d3sF;
-		++d3sFN;
-		if (liesOn(*d3sFN, bbox, threshold)) {
-			d3s.pop_front();
-			d3s.push_back(d3sF);
-		}
+	while (!s.empty()) {
+		auto bpIt = s.top();
+		const Polygon<K>& bp = PolygonTraits::polygon(bpIt->first);
+		s.pop();
+		auto& d3s = bpIt->second;
 
 		Polygon<K> newBp;
 
@@ -136,56 +147,38 @@ void flattenPolygonsInBbox(InputIterator begin, InputIterator end, OutputIterato
 			auto from = d3s[d3Index];
 			auto to = d3s[d3Index + 1];
 
-			//std::vector<Point<K>> border(from, to);
 			std::vector<Point<K>> border;
 			for (auto it = from; it != to + 1; ++it) {
 				border.push_back(*it);
 			}
 			Polyline<K> newBorder;
 
-			//newBp.push_back(*from);
 			newBorder.push_back(*from);
 
 			auto fromSide = closest_side(*from, bbox);
 			auto toSide = closest_side(*to, bbox);
 			
 			auto currSide = fromSide;
-			while (currSide != toSide) {
+
+			do {
+				if (currSide == toSide && from->x() > to->x()) {
+					break;
+				}
 				auto nextSide = next_side(currSide);
 				auto corner = get_corner(bbox, currSide, nextSide);
-				//newBp.push_back(corner);
 				newBorder.push_back(corner);
 				currSide = nextSide;
-			}
+			} while (currSide != toSide);
 
-			// Vertex to is already added by the next sequence of operations
-			//newBp.push_back(*to);
 			newBorder.push_back(*to);
 
-			// Add new border to newBp if it wouldn't cover already handled polygons.
 			Polygon<K> coverPolygon(border.rbegin() + 1, border.rend() - 1);
 			std::copy(newBorder.vertices_begin(), newBorder.vertices_end(), std::back_inserter(coverPolygon));
-
-			//using namespace renderer;
-			//IpeRenderer renderer;
-			//renderer.addPainting([coverPolygon, newBorder, border, bp](GeometryRenderer& r) {
-			//	r.setStroke(Color(0, 0, 0), 2.0);
-			//	r.draw(bp);
-			//	r.setStroke(Color(255, 0, 0), 2.0);
-			//	Polyline<Inexact> borderPl(border.begin(), border.end());
-			//	r.draw(borderPl);
-			//	r.setStroke(Color(0, 255, 0), 2.0);
-			//	r.draw(newBorder);
-			//	r.setStroke(Color(0, 0, 255), 2.0);
-			//	r.draw(coverPolygon);
-			//});
-			//std::stringstream ss;
-			//ss << "debugging_fun_" << bpI << "_" << d3Index << ".ipe";
-			//renderer.save(ss.str());
 			
 			bool covers = false;
-			for (int handledBefore = 0; handledBefore < bpI; ++handledBefore) {
-				const Polygon<K>& before = PolygonTraits::polygon(bordering.at(handledBefore));
+			for (const auto& handledBefore : borderingHandled) {
+				// Does extending this arc to the bounding box cover something that was already placed?
+				const Polygon<K>& before = PolygonTraits::polygon(handledBefore);
 				if (coverPolygon.has_on_bounded_side(pointInsidePolygon(before))) {
 					covers = true;
 					break;
@@ -206,17 +199,38 @@ void flattenPolygonsInBbox(InputIterator begin, InputIterator end, OutputIterato
 			do {
 				newBp.push_back(*keepCirc);
 			} while (++keepCirc != to);
+
+			bool found = false;
+			// Put next polygon on the stack
+
+			for (auto bit = bordering.begin(); bit != bordering.end(); ++bit) {
+				// Ignore if current polygon
+				if (bit == bpIt) continue;
+				// Then there is at most one polygon in the bordering list that shares the degree 3 vertices.
+				// If it shares one then it shares the other too.
+				auto& otherD3s = bit->second;
+				for (const auto& otherD3 : otherD3s) {
+					if (CGAL::squared_distance(*otherD3, *d3s[d3Index]) < threshold) {
+						s.push(bit);
+						found = true;
+						break;
+					}
+				}
+				if (found) break;
+			}
 		}
 
-		newPolygons.push_back(PolygonTraits::changePolygon(bordering[bpI], newBp));
+		borderingHandled.push_back(bpIt->first);
+		newPolygons.push_back(PolygonTraits::changePolygon(bpIt->first, newBp));
+		bordering.erase(bpIt);
 	}
 
-	std::copy(within.begin(), within.end(), std::back_inserter(newPolygons));
-
 	// Sort final polygons on decreasing area.
-	std::sort(newPolygons.begin(), newPolygons.end(), [](const auto& p1, const auto& p2) {
+	std::sort(within.begin(), within.end(), [](const auto& p1, const auto& p2) {
 		return PolygonTraits::polygon(p1).area() > PolygonTraits::polygon(p2).area();
-	});
+		});
+
+	std::copy(within.begin(), within.end(), std::back_inserter(newPolygons));
 
 	for (const auto& pgn : newPolygons) {
 		*out++ = pgn;
