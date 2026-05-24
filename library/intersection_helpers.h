@@ -73,6 +73,7 @@ void intersections(const CGAL::Parabola_segment_2<Gt>& ps, const Circle<Inexact>
 
 template <class OutputIterator>
 void intersections(const Segment<Inexact>& s, const Circle<Inexact>& circle, OutputIterator out) {
+    if (s.squared_length() < M_EPSILON) return;
     std::vector<OneRootPoint> inters;
     CSCurve seg(pretendExact(s));
     intersectionsArrCurves<CSArrangement>(seg, pretendExact(circle), std::back_inserter(inters));
