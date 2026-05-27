@@ -36,14 +36,31 @@ struct PolygonSetTopology {
                 Point<K> last;
                 for (int arcIx : polygonArcs) {
                     const auto& arc = topoSet.arcs[arcIx];
+
                     // We currently don't distinguish reverse arcs so just check which one we need
-                    if (polygon.is_empty() || *arc.vertices_begin() == last) {
-                        std::copy(arc.vertices_begin(), --arc.vertices_end(), std::back_inserter(polygon));
-                        last = *(--arc.vertices_end());
+                    bool reverse = false;
+                    if (polygon.is_empty()) {
+                        if (polygonArcs.size() > 1) {
+                            reverse = topoSet.arcs[polygonArcs[1]].source() != topoSet.arcs[polygonArcs[0]].target() && topoSet.arcs[polygonArcs[1]].target() != topoSet.arcs[polygonArcs[0]].target();
+
+                        }
+                    } else {
+                        reverse = *arc.vertices_begin() != last;
+                    }
+
+                    if (!reverse) {
+                        if (!polygon.is_empty() && last != *arc.vertices_begin()) {
+                            std::cerr << "Arcs do not connect!" << std::endl;
+                        }
+                        std::copy(arc.vertices_begin(), arc.vertices_end()-1, std::back_inserter(polygon));
+                        last = *(arc.vertices_end()-1);
                     }
                     else {
-                        std::copy(arc.vertices_rbegin(), --arc.vertices_rend(), std::back_inserter(polygon));
-                        last = *(--arc.vertices_rend());
+                        if (!polygon.is_empty() && last != *arc.vertices_rbegin()) {
+                            std::cerr << "Arcs do not connect!" << std::endl;
+                        }
+                        std::copy(arc.vertices_rbegin(), arc.vertices_rend()-1, std::back_inserter(polygon));
+                        last = *(arc.vertices_rend()-1);
                     }
                 }
                 if (polygonWithHoles.is_empty()) {

@@ -147,20 +147,21 @@ void flattenPolygonsInBbox(InputIterator begin, InputIterator end, OutputIterato
 			auto to = d3s[d3Index + 1];
 
 			std::vector<Point<K>> border;
-			for (auto it = from; it != to + 1; ++it) {
+			for (auto it = from; it != to; ++it) {
 				border.push_back(*it);
 			}
+			border.push_back(*to);
 			Polyline<K> newBorder;
 
 			newBorder.push_back(*from);
 
 			auto fromSide = closest_side(*from, bbox);
 			auto toSide = closest_side(*to, bbox);
-			
+
 			auto currSide = fromSide;
 
 			do {
-				if (currSide == toSide && from->x() > to->x()) {
+				if (currSide == toSide && (fromSide == Side::Top && from->x() > to->x() || fromSide == Side::Right && from->y() < to->y() || fromSide == Side::Left && from->y() > to->y() || fromSide == Side::Bottom && from->x() < to->x())) {
 					break;
 				}
 				auto nextSide = next_side(currSide);

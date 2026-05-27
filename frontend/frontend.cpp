@@ -5,6 +5,7 @@
 #include <QVBoxLayout>
 #include <QPushButton>
 #include <QCheckBox>
+#include <QListWidget>
 #include <QSpinBox>
 #include <QImageReader>
 #include <QLabel>
@@ -21,6 +22,7 @@
 #include "library/topojson_export.h"
 
 #include <cartocrow/renderer/voronoi_drawer.h>
+#include <cartocrow/renderer/painting_renderer.h>
 #include <cartocrow/core/transform_helpers.h>
 
 #define DEBUG 0
@@ -41,7 +43,7 @@ void saveGraphIntoTopoSet(const BaseGraph& graph, BezierTopoSet& topoSet) {
         }
         auto start = current;
         BaseGraph::Edge_const_handle end;
-        if (current->prev() == initial) {
+        if (current->source()->degree() == 2) {
             end = initial;
         }
         else {
@@ -435,6 +437,10 @@ void BezierSimplificationDemo::addIOTab() {
     auto* loadReferencePolygonButton = new QPushButton("Load reference polygon for image");
     vLayout->addWidget(loadReferencePolygonButton);
 
+    auto* referenceDataList = new QListWidget();
+    vLayout->addWidget(referenceDataList);
+    referenceDataList->setMaximumHeight(200);
+
     auto* clearReferenceDataButton = new QPushButton("Clear reference data");
     vLayout->addWidget(clearReferenceDataButton);
 
@@ -477,27 +483,43 @@ void BezierSimplificationDemo::addIOTab() {
         m_renderer->repaint();
     });
 
-    connect(loadFileButton, &QPushButton::clicked, [this]() {
+    connect(loadFileButton, &QPushButton::clicked, [this, loadFileButton]() {
         QString startDir = ".";
         std::filesystem::path filePath = QFileDialog::getOpenFileName(this, tr("Select input file (.ipe or .shp)"), startDir).toStdString();
         if (filePath == "") return;
         loadInput(filePath);
+
+        std::stringstream ss;
+        ss << "Load file (" << filePath.filename().string() << ")";
+        loadFileButton->setText(QString::fromStdString(ss.str()));
     });
 
-    connect(loadReferenceDataButton, &QPushButton::clicked, [this]() {
+    connect(loadReferenceDataButton, &QPushButton::clicked, [this, referenceDataList]() {
         QString startDir = ".";
         std::filesystem::path filePath = QFileDialog::getOpenFileName(this, tr("Select reference file (.tif or .shp)"), startDir).toStdString();
         if (filePath == "") return;
+
+        auto* listItem = new QListWidgetItem(QString::fromStdString(filePath.filename().string()), referenceDataList);
+        listItem->setCheckState(Qt::Checked);
+
         if (filePath.extension() == ".tif") {
-            m_referenceData.push_back(QImage(filePath.string().c_str()));
+            m_referenceData.emplace_back(QImage(filePath.string().c_str()), filePath, listItem);
         } else {
             auto geometrySet = readGeometrySetUsingGDAL(filePath);
-            m_referenceData.push_back(geometrySet);
+            m_referenceData.emplace_back(geometrySet, filePath, listItem);
+            PaintingRenderer& pr = m_referenceData.back().painting;
+            GeometryRenderer& r = pr;
+            for (const auto& geom : geometrySet.geometries) {
+                std::visit([&](const auto& g) { r.draw(g); }, geom);
+            }
         }
+        
+        listItem->setCheckState(Qt::Checked);
     });
 
-    connect(clearReferenceDataButton, &QPushButton::clicked, [this]() {
+    connect(clearReferenceDataButton, &QPushButton::clicked, [this, referenceDataList]() {
         m_referenceData.clear();
+        referenceDataList->clear();
     });
 
     connect(loadReferencePolygonButton, &QPushButton::clicked, [this]() {
@@ -592,6 +614,10 @@ void BezierSimplificationDemo::addIOTab() {
         moveControlPoint(m_dragging->controlPoint, finalPosition, editAlignTangents->isChecked(), &m_editGraph);
         m_editGraph.endBatch();
         m_dragging = nullptr;
+        m_renderer->repaint();
+    });
+
+    connect(referenceDataList, &QListWidget::itemChanged, [this]() {
         m_renderer->repaint();
     });
 }
@@ -1051,21 +1077,24 @@ void BezierSimplificationDemo::addPaintings() {
     m_renderer->addPainting([this](GeometryRenderer& renderer) {
         int i = 0;
         for (const auto& refData : m_referenceData) {
+            if (refData.listItem->checkState() == Qt::Unchecked) {
+                ++i;
+                continue;
+            }
+
             renderer.setStroke(m_colors.at(i), 2.0);
-            if (auto qImageP = std::get_if<QImage>(&refData)) {
-                auto& qImage = *qImageP;
+
+            if (auto qImageP = std::get_if<QImage>(&refData.data)) {
                 const auto formats = QImageReader::supportedImageFormats();
                 if (!formats.contains("tiff")) {
                     std::cerr << "No support for tiff" << std::endl;
                 }
                 if (auto gw = dynamic_cast<GeometryWidget*>(&renderer)) {
-                    gw->drawImage(m_referencePolygon, qImage);
+                    gw->drawImage(m_referencePolygon, *qImageP);
                 }
-            } else if (auto geometrySetP = std::get_if<GeometrySet<Inexact>>(&refData)) {
-                auto& geometrySet = *geometrySetP;
-                for (const auto& geom : geometrySet.geometries) {
-                    std::visit([&](const auto& g) { renderer.draw(g); }, geom);
-                }
+            }
+            else {
+                refData.painting.paint(renderer);
             }
             ++i;
         }
