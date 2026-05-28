@@ -29,8 +29,7 @@ using namespace cartocrow::renderer;
 using namespace cartocrow::curved_simplification;
 
 using Graph = BezierCollapseGraphWithHistoryAndIndex;
-using BaseGraph = Graph::BaseGraph;
-using ApproximatedGraph = ApproximatedBezierGraph<BaseGraph>;
+using ApproximatedGraph = ApproximatedBezierGraph<Graph>;
 using Traits = StevenBCTraits<Graph>;
 using Collapse = BezierCollapse<Graph, Traits>;
 using Edge_handle = Graph::Edge_handle;
@@ -223,43 +222,43 @@ public:
 
         renderer.setMode(GeometryRenderer::stroke);
         renderer.setStroke(Color(0, 0, 0), 1.5);
-        for (auto eit = m_graph.edges_begin(); eit != m_graph.edges_end(); ++eit) {
+        for (auto eh : m_graph.edges()) {
 //            if (m_showDebugInfo->isChecked() && eit->data().collapse.has_value()) {
 //                renderer.setStroke(Color(50, 200, 50), 2.0);
 //            } else {
             renderer.setStroke(Color(0, 0, 0), 1.5);
 //            }
-            renderer.draw(eit->curve().transform(m_trans));
+            renderer.draw(eh->curve().transform(m_trans));
             if (m_showEdgeDirection) {
                 renderer.setStroke(Color(0, 0, 0), 6.0);
-                renderer.draw(eit->curve().split(0.25).first.transform(m_trans));
+                renderer.draw(eh->curve().split(0.25).first.transform(m_trans));
             }
 
             if (m_showArcIndex) {
-                renderer.drawText(eit->curve().position(0.5).transform(m_trans), std::to_string(eit->data().index));
+                renderer.drawText(eh->curve().position(0.5).transform(m_trans), std::to_string(eh->data().index));
             }
         }
         if (m_showControlPoints) {
             // Control polylines
-            for (auto eit = m_graph.edges_begin(); eit != m_graph.edges_end(); ++eit) {
+            for (auto eh : m_graph.edges()) {
                 renderer.setStroke(Color(0, 255, 0), 1.0);
                 Polyline<Inexact> pl;
-                for (int c = 0; c < 4; ++c) pl.push_back(eit->curve().control(c));
+                for (int c = 0; c < 4; ++c) pl.push_back(eh->curve().control(c));
                 renderer.draw(pl.transform(m_trans));
             }
             // Control points
-            for (auto eit = m_graph.edges_begin(); eit != m_graph.edges_end(); ++eit) {
+            for (auto eh : m_graph.edges()) {
                 renderer.setStroke(Color(0, 0, 255), 1.5);
-                renderer.draw(eit->curve().sourceControl().transform(m_trans));
-                renderer.draw(eit->curve().targetControl().transform(m_trans));
+                renderer.draw(eh->curve().sourceControl().transform(m_trans));
+                renderer.draw(eh->curve().targetControl().transform(m_trans));
                 renderer.setStroke(Color(255, 0, 255), 1.5);
-                renderer.draw(eit->curve().source().transform(m_trans));
-                renderer.draw(eit->curve().target().transform(m_trans));
+                renderer.draw(eh->curve().source().transform(m_trans));
+                renderer.draw(eh->curve().target().transform(m_trans));
             }
         }
         if (m_showVertices) {
-            for (auto vit = m_graph.vertices_begin(); vit != m_graph.vertices_end(); ++vit) {
-                renderer.draw(vit->point().transform(m_trans));
+            for (auto vh : m_graph.vertices()) {
+                renderer.draw(vh->point().transform(m_trans));
             }
         }
     }
@@ -271,14 +270,12 @@ class BezierSimplificationDemo : public QMainWindow {
   private:
 	GeometryWidget* m_renderer;
 
-	BaseGraph m_baseGraph;
     Graph m_graph;
-    BaseGraph m_editBaseGraph;
     Graph m_editGraph;
-    BaseGraph m_beforeReconstruct;
+    Graph m_beforeReconstruct;
 	Collapse m_collapse;
     std::optional<Edge_handle> m_debugEdge;
-    BaseGraph m_original;
+    Graph m_original;
     BezierTopoSet m_toposet;
     CGAL::Aff_transformation_2<Inexact> m_transform;
     CGAL::Aff_transformation_2<Inexact> m_backupTransform;

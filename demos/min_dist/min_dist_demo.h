@@ -10,7 +10,7 @@ using namespace cartocrow;
 using namespace cartocrow::renderer;
 using namespace cartocrow::curved_simplification;
 
-using StraightGraph = Straight_graph_2<std::monostate, std::monostate, Inexact>;
+using StraightGraph = Straight_graph_2<std::monostate, std::monostate, Inexact, SimpleGraph>;
 
 class MinDistDemo : public QMainWindow {
 Q_OBJECT

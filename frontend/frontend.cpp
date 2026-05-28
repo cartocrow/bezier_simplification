@@ -27,10 +27,10 @@
 
 #define DEBUG 0
 
-void saveGraphIntoTopoSet(const BaseGraph& graph, BezierTopoSet& topoSet) {
-    std::unordered_set<const BaseGraph::Edge*> visited;
+void saveGraphIntoTopoSet(const Graph& graph, BezierTopoSet& topoSet) {
+    std::unordered_set<const Graph::Edge*> visited;
 
-    for (auto eit = graph.edges_begin(); eit != graph.edges_end(); ++eit) {
+    for (auto eit : graph.edges()) {
         if (visited.contains(&*eit)) {
             continue;
         }
@@ -42,7 +42,7 @@ void saveGraphIntoTopoSet(const BaseGraph& graph, BezierTopoSet& topoSet) {
             current = current->prev();
         }
         auto start = current;
-        BaseGraph::Edge_const_handle end;
+        Graph::Edge_const_handle end;
         if (current->source()->degree() == 2) {
             end = initial;
         }
@@ -93,8 +93,8 @@ bool liesOnBbox(const Point<Inexact>& p, const Box& bbox) {
         abs(p.y() - bbox.ymax()) < M_EPSILON;
 }
 
-void insertSplinesIntoGraph(const std::vector<CubicBezierSpline>& splines, BaseGraph& g) {
-    std::unordered_map<Point<Inexact>, BaseGraph::Vertex_handle> pToV;
+void insertSplinesIntoGraph(const std::vector<CubicBezierSpline>& splines, Graph& g) {
+    std::unordered_map<Point<Inexact>, Graph::Vertex_handle> pToV;
 
     auto getVertex = [&pToV, &g](const Point<Inexact>& p) {
         if (pToV.contains(p)) {
@@ -118,8 +118,8 @@ void insertSplinesIntoGraph(const std::vector<CubicBezierSpline>& splines, BaseG
     }
 }
 
-void insertTopoSetIntoGraph(const BezierTopoSet& ts, BaseGraph& g, bool ignoreBbox) {
-    std::unordered_map<Point<Inexact>, BaseGraph::Vertex_handle> pToV;
+void insertTopoSetIntoGraph(const BezierTopoSet& ts, Graph& g, bool ignoreBbox) {
+    std::unordered_map<Point<Inexact>, Graph::Vertex_handle> pToV;
 
     auto getVertex = [&pToV, &g](const Point<Inexact>& p) {
         if (pToV.contains(p)) {
@@ -1102,11 +1102,11 @@ void BezierSimplificationDemo::addPaintings() {
 
     m_renderer->addPainting([this](GeometryRenderer& renderer) {
         renderer.setStroke(Color(200, 200, 200), 2.0);
-        for (auto eit = m_original.edges_begin(); eit != m_original.edges_end(); ++eit) {
+        for (auto eit : m_original.edges()) {
             renderer.draw(eit->curve().transform(m_transform.inverse()));
         }
         if (m_showOldVertices->isChecked()) {
-            for (auto vit = m_original.vertices_begin(); vit != m_original.vertices_end(); ++vit) {
+            for (auto vit : m_original.vertices()) {
                 renderer.draw(vit->point().transform(m_transform.inverse()));
             }
         }
@@ -1124,7 +1124,7 @@ void BezierSimplificationDemo::addPaintings() {
         renderer.setMode(GeometryRenderer::stroke);
         renderer.setStroke(Color(200, 0, 200), 2.0);
         renderer.setStrokeOpacity(10);
-        for (auto eit = m_baseGraph.edges_begin(); eit != m_baseGraph.edges_end(); ++eit) {
+        for (auto eit : m_baseGraph.edges()) {
             int tSteps = 1000;
             auto curve = eit->curve().transform(m_transform.inverse());
             for (int tStep = 0; tStep <= tSteps; ++tStep) {
@@ -1151,10 +1151,10 @@ void BezierSimplificationDemo::addPaintings() {
     m_renderer->addPainting([this](GeometryRenderer& renderer) {
         auto inv = m_transform.inverse();
         renderer.setStroke(Color{0, 0, 0}, 2.0);
-        for (auto eit = m_forcer.m_g.edges_begin(); eit != m_forcer.m_g.edges_end(); ++eit) {
+        for (auto eit : m_forcer.m_g.edges()) {
             renderer.draw(eit->curve().transform(inv));
         }
-        for (auto vit = m_forcer.m_g.vertices_begin(); vit != m_forcer.m_g.vertices_end(); ++vit) {
+        for (auto vit : m_forcer.m_g.vertices()) {
             renderer.draw(vit->point().transform(inv));
         }
     }, "Linearized");
@@ -1211,7 +1211,7 @@ void BezierSimplificationDemo::addPaintings() {
 
         if (m_editHighlight->isChecked()) {
             // Find nearest control polyline
-            for (auto eit = m_editBaseGraph.edges_begin(); eit != m_editBaseGraph.edges_end(); ++eit) {
+            for (auto eit : m_editBaseGraph.edges()) {
                 auto mpT = mp.transform(m_transform);
                 Polyline<Inexact> pl;
                 for (int c = 0; c < 4; ++c) pl.push_back(eit->curve().control(c));
@@ -1226,7 +1226,7 @@ void BezierSimplificationDemo::addPaintings() {
             renderer.setStrokeOpacity(255);
             renderer.setStroke(Color(0, 0, 0), 4);
             renderer.setMode(GeometryRenderer::stroke);
-            for (auto eit = m_editBaseGraph.edges_begin(); eit != m_editBaseGraph.edges_end(); ++eit) {
+            for (auto eit : m_editBaseGraph.edges()) {
                 if (eit->data().index == nearestArc) {
                     renderer.draw(eit->curve().transform(inv));
                 }
@@ -1234,7 +1234,7 @@ void BezierSimplificationDemo::addPaintings() {
         }
 
         // Control polylines
-        for (auto eit = m_editBaseGraph.edges_begin(); eit != m_editBaseGraph.edges_end(); ++eit) {
+        for (auto eit : m_editBaseGraph.edges()) {
             renderer.setStroke(Color(0, 255, 0), 1.0);
             Polyline<Inexact> pl;
             for (int c = 0; c < 4; ++c) pl.push_back(eit->curve().control(c));
@@ -1278,7 +1278,7 @@ void BezierSimplificationDemo::addPaintings() {
             std::optional<BaseGraph::Edge_handle> closest;
             std::optional<CubicBezierCurve::CurvePoint> nearest;
             double minDist = std::numeric_limits<double>::infinity();
-            for (auto eit = m_editBaseGraph.edges_begin(); eit != m_editBaseGraph.edges_end(); ++eit) {
+            for (auto eit : m_editBaseGraph.edges()) {
                 auto n = eit->curve().nearest(mp.transform(m_transform));
                 auto d2 = screenDistanceToMouse2(n.point.transform(inv));
                 
@@ -1299,7 +1299,7 @@ void BezierSimplificationDemo::addPaintings() {
             // naive...
             std::optional<BaseGraph::Vertex_handle> closest;
             double minDist = std::numeric_limits<double>::infinity();
-            for (auto vit = m_editBaseGraph.vertices_begin(); vit != m_editBaseGraph.vertices_end(); ++vit) {
+            for (auto vit : m_editBaseGraph.vertices()) {
                 if (vit->degree() != 2) continue;
                 auto d2 = screenDistanceToMouse2(vit->point().transform(inv));
                 if (d2 < minDist && d2 < 400) {
@@ -1323,13 +1323,13 @@ void BezierSimplificationDemo::addPaintings() {
 
 void BezierSimplificationDemo::updateEditables() {
     m_editables.clear();
-    for (auto eit = m_editBaseGraph.edges_begin(); eit != m_editBaseGraph.edges_end(); ++eit) {
+    for (auto eit : m_editBaseGraph.edges()) {
         auto sourceControlEditable = std::make_shared<ControlPoint>(std::pair(eit, false));
         m_editables.push_back(sourceControlEditable);
         auto targetControlEditable = std::make_shared<ControlPoint>(std::pair(eit, true));
         m_editables.push_back(targetControlEditable);
     }
-    for (auto vit = m_editBaseGraph.vertices_begin(); vit != m_editBaseGraph.vertices_end(); ++vit) {
+    for (auto vit : m_editBaseGraph.vertices()) {
         auto endpointEditable = std::make_shared<ControlPoint>(vit);
         m_editables.push_back(endpointEditable);
     }
@@ -1433,7 +1433,7 @@ void BezierSimplificationDemo::checkIntersections() {
 
     auto& theBaseGraph = m_editBaseGraph.number_of_edges() > 0 ? m_editBaseGraph : m_baseGraph;
 
-    for (auto eit = theBaseGraph.edges_begin(); eit != theBaseGraph.edges_end(); ++eit) {
+    for (auto eit : theBaseGraph.edges()) {
         if (eit->curve().selfIntersects()) {
             std::cout << "Found self-intersection!" << std::endl;
             r.draw(eit->curve().transform(inv));
@@ -1441,7 +1441,7 @@ void BezierSimplificationDemo::checkIntersections() {
         bcqt.insert(eit);
     }
 
-    for (auto eit = theBaseGraph.edges_begin(); eit != theBaseGraph.edges_end(); ++eit) {
+    for (auto eit : theBaseGraph.edges()) {
         auto box = eit->curve().bbox();
         Rectangle<Inexact> rect(box.xmin(), box.ymin(), box.xmax(), box.ymax());
         bcqt.findOverlapped(rect, [&](const BaseGraph::Edge_handle& other) {

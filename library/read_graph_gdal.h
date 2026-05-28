@@ -28,7 +28,7 @@ template <class K>
 using CDT = CGAL::Constrained_Delaunay_triangulation_2<K, TDS<K>, Itag>;
 }
 
-Straight_graph_2<std::monostate, std::monostate, Inexact> readGraphUsingGDAL(const std::filesystem::path& path);
+Straight_graph_2<std::monostate, std::monostate, Inexact, SimpleGraph> readGraphUsingGDAL(const std::filesystem::path& path);
 std::pair<RegionSet<Inexact>, OGRSpatialReference> readRegionSetUsingGDAL(const std::filesystem::path& path);
 void exportTopoSetUsingGDAL(const std::filesystem::path& path, const StraightTopoSet<Inexact> topoSet, const CGAL::Aff_transformation_2<Inexact>& trans, std::optional<OGRSpatialReference> spatialReference, bool stackPolygons);
 

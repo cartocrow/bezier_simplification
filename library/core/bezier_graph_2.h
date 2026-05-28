@@ -5,5 +5,5 @@
 
 namespace cartocrow {
 template <class VD, class ED>
-using Bezier_graph_2 = Graph_2<VD, ED, Graph_Bezier_curve_traits_2>;
+using Bezier_graph_2 = Graph_2<VD, ED, Graph_Bezier_curve_traits_2, HistoricSimpleGraph>;
 }

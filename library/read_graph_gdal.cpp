@@ -59,7 +59,7 @@ OGRMultiPolygon polygonSetRawToOGRMultiPolygonT(const PolygonSetRaw<Inexact>& po
     return ogrMultiPolygon;
 }
 
-Straight_graph_2<std::monostate, std::monostate, Inexact> readGraphUsingGDAL(const std::filesystem::path& path) {
+Straight_graph_2<std::monostate, std::monostate, Inexact, SimpleGraph> readGraphUsingGDAL(const std::filesystem::path& path) {
     GDALAllRegister();
     GDALDataset *poDS;
 
@@ -73,7 +73,7 @@ Straight_graph_2<std::monostate, std::monostate, Inexact> readGraphUsingGDAL(con
 
     poLayer->ResetReading();
 
-    using Graph = Straight_graph_2<std::monostate, std::monostate, Inexact>;
+    using Graph = Straight_graph_2<std::monostate, std::monostate, Inexact, SimpleGraph>;
 
     Graph g;
 
