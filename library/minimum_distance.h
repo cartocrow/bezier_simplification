@@ -883,7 +883,7 @@ class MinimumDistanceForcer {
 
         for (auto& component : m_loops) {
             for (auto edgeP: component) {
-                m_edgeToLoop[edgeP->graph_index()] = &m_loops.back();
+                m_edgeToLoop[edgeP->graph_index()] = &component;
                 m_vertexToLoop[edgeP->source()->graph_index()] = &component;
             }
         }
