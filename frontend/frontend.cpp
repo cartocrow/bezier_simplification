@@ -541,13 +541,12 @@ void BezierSimplificationDemo::addIOTab() {
         std::filesystem::path filePath = QFileDialog::getSaveFileName(this, tr("Select folder to create a folder with .shp and auxiliary files."), startDir).toStdString();
         if (filePath.empty()) return;
 
-        std::ofstream out(filePath / "beziers.txt");
-
         auto& theBaseGraph = m_editBaseGraph.number_of_edges() > 0 ? m_editBaseGraph : m_baseGraph;
 
         saveGraphIntoTopoSet(theBaseGraph, m_toposet);
         std::string jsonFileName = filePath.stem().string() + ".json";
-        exportTopoSetToJson(filePath / jsonFileName, m_toposet.transform(m_transform.inverse()), m_spatialRef);
+        std::filesystem::path jsonFilePath = filePath.has_extension() ? filePath.parent_path() / jsonFileName : filePath / jsonFileName;
+        exportTopoSetToJson(jsonFilePath, m_toposet.transform(m_transform.inverse()), m_spatialRef);
         exportTopoSetUsingGDAL(filePath, approximate(m_toposet), m_transform.inverse(), m_spatialRef, stackPolygons->isChecked());
     });
 
