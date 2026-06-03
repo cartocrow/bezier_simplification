@@ -119,7 +119,7 @@ public:
 
     val get_edge_curve(int id) const {
         auto eh = m_eidToE.at(id);
-        auto& c = eh->curve();
+        auto c = eh->curve();
         val obj = val::object();
         obj.set("c0", makePoint(c.source()));
         obj.set("c1", makePoint(c.sourceControl()));

@@ -17,13 +17,11 @@ set(SHARED_HEADERS
     common.h
     core/bezier_graph_2.h
     core/graph_bezier_curve_traits_2.h
-    core/graph_2_like.h
     core/region_set.h
     core/topo_set.h
     core/geometry_set.h
     indexed_priority_queue.h
     steven_bezier_collapse.h
-    curved_graph_with_history.h
     schneider.h
     spiro_helpers/bezctx_cbs.h
     spiro_helpers/spiro_helpers.h

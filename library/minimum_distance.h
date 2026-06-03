@@ -59,13 +59,13 @@ approximateBezierGraph(const BezierGraph& bg, int nPoints) {
 
     SG g;
 
-    for (auto vit = bg.vertices_begin(); vit != bg.vertices_end(); ++vit) {
+    for (auto vit : bg.vertices()) {
         auto vh = g.add_vertex(vit->point());
         vh->data().originalVertex = vit;
         vmap[&*vit] = vh;
     }
 
-    for (auto eit = bg.edges_begin(); eit != bg.edges_end(); ++eit) {
+    for (auto eit : bg.edges()) {
         auto curveStartVertex = vmap[&*eit->source()];
         auto curveEndVertex = vmap[&*eit->target()];
         
@@ -104,7 +104,7 @@ BezierGraph reconstructBezierGraph(const ApproximatedBezierGraph<BezierGraph>& s
 
     BG bg;
 
-    for (auto vit = sg.vertices_begin(); vit != sg.vertices_end(); ++vit) {
+    for (auto vit : sg.vertices()) {
         if (vit->data().originalVertex.has_value()) {
             auto vh = bg.add_vertex(vit->point());
             auto& og = *vit->data().originalVertex;
@@ -114,7 +114,7 @@ BezierGraph reconstructBezierGraph(const ApproximatedBezierGraph<BezierGraph>& s
         }
     }
 
-    for (auto vit = sg.vertices_begin(); vit != sg.vertices_end(); ++vit) {
+    for (auto vit : sg.vertices()) {
         auto& og = vit->data().originalVertex;
         if (og.has_value()) {
             for (auto eit = vit->incident_edges_begin(); eit != vit->incident_edges_end(); ++eit) {
@@ -615,13 +615,11 @@ class MinimumDistanceForcer {
     double m_averageEdgeLength = 0;
     bool m_ignoreBbox = false;
     StraightGraph& m_g;
-    using VertexP = const typename StraightGraph::Vertex*;
-    using EdgeP = const typename StraightGraph::Edge*;
-    using Loop = std::vector<EdgeP>;
+    using Loop = std::vector<typename StraightGraph::Edge_handle>;
     std::vector<Loop> m_loops;
-    std::vector<Segment<Inexact>> m_originalSegments;
-    std::vector<Loop*> m_edgeToLoop;
-    std::vector<Loop*> m_vertexToLoop;
+    Graph_edge_map<StraightGraph, Segment<Inexact>> m_originalSegments;
+    Graph_edge_map<StraightGraph, Loop*> m_edgeToLoop;
+    Graph_vertex_map<StraightGraph, Loop*> m_vertexToLoop;
 
     Box m_bbox;
 
@@ -634,7 +632,7 @@ class MinimumDistanceForcer {
 
     void recomputeDelaunay() {
         m_delaunay.clear();
-        for (auto eit = m_g.edges_begin(); eit != m_g.edges_end(); ++eit) {
+        for (auto eit : m_g.edges()) {
             Segment<Inexact> seg(eit->source()->point(), eit->target()->point());
             if (m_ignoreBbox && (
                 liesOnBbox(seg.source()) &&
@@ -754,12 +752,12 @@ class MinimumDistanceForcer {
 
     Loop* getLoop(GraphFeature& f) {
         if (auto vhP = std::get_if<typename StraightGraph::Vertex_handle>(&f)) {
-            if (m_vertexToLoop[(*vhP)->graph_index()] != nullptr) {
-                return m_vertexToLoop.at((*vhP)->graph_index());
+            if (m_vertexToLoop[*vhP] != nullptr) {
+                return m_vertexToLoop[*vhP];
             }
         } else if (auto ehP = std::get_if<typename StraightGraph::Edge_handle>(&f)) {
-            if (m_edgeToLoop[(*ehP)->graph_index()] != nullptr) {
-                return m_edgeToLoop.at((*ehP)->graph_index());
+            if (m_edgeToLoop[*ehP] != nullptr) {
+                return m_edgeToLoop[*ehP];
             }
         }
         return nullptr;
@@ -839,7 +837,7 @@ class MinimumDistanceForcer {
 
     void computeAverageEdgeLength() {
         double totalLength = 0;
-        for (auto eit = m_g.edges_begin(); eit != m_g.edges_end(); ++eit) {
+        for (auto eit : m_g.edges()) {
             auto d = CGAL::sqrt(CGAL::squared_distance(eit->source()->point(), eit->target()->point()));
             totalLength += d;
         }
@@ -848,23 +846,22 @@ class MinimumDistanceForcer {
 
     void identifyLoops() {
         m_loops.clear();
-        m_edgeToLoop.clear();
-        m_vertexToLoop.clear();
-        m_originalSegments.resize(m_g.number_of_edges());
-        m_edgeToLoop.resize(m_g.number_of_edges());
-        m_vertexToLoop.resize(m_g.number_of_vertices());
+        //m_edgeToLoop = Graph_edge_map(m_g, nullptr);
+        //m_vertexToLoop = Graph_vertex_map(m_g, nullptr);
+        m_edgeToLoop.assign(nullptr);
+        m_vertexToLoop.assign(nullptr);
 
         std::unordered_set<const typename StraightGraph::Edge*> seen;
 
-        for (auto eit = m_g.edges_begin(); eit != m_g.edges_end(); ++eit) {
+        for (auto eit : m_g.edges()) {
             if (seen.contains(&*eit)) continue;
             auto start = eit;
             auto current = start;
 
-            std::vector<const typename StraightGraph::Edge*> component;
+            std::vector<typename StraightGraph::Edge_handle> component;
             do {
                 seen.insert(&*current);
-                component.push_back(&*current);
+                component.push_back(current);
                 if (current->target()->degree() != 2) break;
                 current = current->next();
             } while (current != start);
@@ -882,26 +879,20 @@ class MinimumDistanceForcer {
         }
 
         for (auto& component : m_loops) {
-            for (auto edgeP: component) {
-                m_edgeToLoop[edgeP->graph_index()] = &m_loops.back();
-                m_vertexToLoop[edgeP->source()->graph_index()] = &component;
+            for (auto eh: component) {
+                m_edgeToLoop[eh] = &m_loops.back();
+                m_vertexToLoop[eh->source()] = &component;
             }
         }
     }
 
     MinimumDistanceForcer() = default;
 
-    MinimumDistanceForcer(StraightGraph& graph, double minDist) : m_g(graph), m_requiredMinDist(minDist) {};
+    MinimumDistanceForcer(StraightGraph& graph, double minDist) : m_g(graph), m_requiredMinDist(minDist), m_originalSegments(graph, Segment<Inexact>({ 0, 0 }, { 0, 0 })), m_vertexToLoop(graph, nullptr), m_edgeToLoop(graph, nullptr) {};
 
     void initialize() {
-        m_originalSegments.resize(m_g.number_of_edges());
-        m_edgeToLoop.resize(m_g.number_of_edges());
-        m_vertexToLoop.resize(m_g.number_of_vertices());
-        if (!m_g.is_indexed()) {
-            m_g.index_vertices_and_edges();
-        }
-        for (auto eit = m_g.edges_begin(); eit != m_g.edges_end(); ++eit) {
-            m_originalSegments[eit->graph_index()] = eit->curve();
+        for (auto eit : m_g.edges()) {
+            m_originalSegments[eit] = eit->curve();
         }
         m_bbox = m_g.bbox();
         computeAverageEdgeLength();
@@ -920,8 +911,8 @@ class MinimumDistanceForcer {
         std::unordered_map<Point<Inexact>, Vector<Inexact>> forces;
 
         auto addForce = [&forces, this](typename StraightGraph::Vertex_handle vh, const Vector<Inexact>& force) {
-            if (m_vertexToLoop[vh->graph_index()] != nullptr) {
-                auto loopP = m_vertexToLoop.at(vh->graph_index());
+            if (m_vertexToLoop[vh] != nullptr) {
+                auto loopP = m_vertexToLoop[vh];
                 auto& loop = *loopP;
                 for (auto eh : loop) {
                     if (!forces.contains(eh->source()->point())) {
@@ -950,7 +941,7 @@ class MinimumDistanceForcer {
             } else if (auto ehP = std::get_if<typename StraightGraph::Edge_handle>(&feature)) {
                 auto& eh = *ehP;
 
-                const auto& seg = eh->curve();
+                const auto seg = eh->curve();
 
                 auto repellerProj = projection(seg, repeller);
                 Vector<Inexact> force = repellerProj - repeller;
@@ -967,7 +958,7 @@ class MinimumDistanceForcer {
 
         auto applyForce = [&](typename StraightGraph::Vertex_handle vh, const Vector<Inexact>& force) {
             if (liesOnBbox(vh->point())) return;
-            vh->point() = vh->point() + force;
+            m_g.move_vertex(vh, vh->point() + force);
             for (auto eit = vh->incident_edges_begin(); eit != vh->incident_edges_end(); ++eit) {
                 (*eit)->curve() = {(*eit)->source()->point(), (*eit)->target()->point()};
                 if constexpr (HasChanged<ED>) {
@@ -990,19 +981,19 @@ class MinimumDistanceForcer {
             }
         }
 
-        for (auto eit = m_g.edges_begin(); eit != m_g.edges_end(); ++eit) {
+        for (auto eit : m_g.edges()) {
 //             auto lengthRatio = eit->curve().squared_length() / m_originalSegments[&*eit].squared_length();
-             auto diff = sqrt(eit->curve().squared_length()) - sqrt(m_originalSegments[eit->graph_index()].squared_length());
+             auto diff = sqrt(eit->curve().squared_length()) - sqrt(m_originalSegments[eit].squared_length());
              auto v = eit->curve().to_vector();
              v /= sqrt(v.squared_length());
              addForce(eit->source(), diff / 2 * v / 2);
              addForce(eit->target(), -diff / 2 * v / 2);
         }
 
-        for (auto eit = m_g.edges_begin(); eit != m_g.edges_end(); ++eit) {
+        for (auto eit : m_g.edges()) {
             auto s = eit->curve();
             auto v = s.to_vector();
-            auto ogS = m_originalSegments[eit->graph_index()];
+            auto ogS = m_originalSegments[eit];
             auto ogV = ogS.to_vector();
             auto angleCw = orientedAngleBetween(v, ogV, CGAL::CLOCKWISE);
             auto angleCcw = orientedAngleBetween(v, ogV, CGAL::COUNTERCLOCKWISE);
@@ -1041,7 +1032,7 @@ class MinimumDistanceForcer {
             addForce(eit->target(), rotatedS.target() - s.target());
         }
 
-        for (auto vit = m_g.vertices_begin(); vit != m_g.vertices_end(); ++vit) {
+        for (auto vit : m_g.vertices()) {
             if (forces.contains(vit->point())) {
                 Vector<Inexact> force = forces.at(vit->point());
 //                force /= sqrt(force.squared_length());

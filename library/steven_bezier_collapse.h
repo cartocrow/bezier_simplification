@@ -497,9 +497,9 @@ public:
 
         CubicBezierSpline beforeSpline;
         if (!doCollapse2) {
-            const auto &c0 = e->prev()->curve();
-            const auto &c1 = e->curve();
-            const auto &c2 = e->next()->curve();
+            const auto c0 = e->prev()->curve();
+            const auto c1 = e->curve();
+            const auto c2 = e->next()->curve();
 
             // Determine cost, point, before, after for edge e.
             beforeSpline.appendCurve(c0);
@@ -528,8 +528,8 @@ public:
                 return;
             }
         } else {
-            const auto &c0 = e->prev()->curve();
-            const auto &c1 = e->curve();
+            const auto c0 = e->prev()->curve();
+            const auto c1 = e->curve();
 
             // Determine cost, point, before, after for edge e.
             beforeSpline.appendCurve(c0);

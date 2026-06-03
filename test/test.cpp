@@ -102,10 +102,10 @@ RegionSet<Inexact> readRegionSetFromIpe(std::filesystem::path path) {
 
 void checkGraph(BezierGraph& g) {
     double xSum = 0;
-    for (auto vit = g.vertices_begin(); vit != g.vertices_end(); ++vit) {
+    for (auto vit : g.vertices()) {
         xSum += vit->point().x();
     }
-    for (auto eit = g.edges_begin(); eit != g.edges_end(); ++eit) {
+    for (auto eit : g.edges()) {
         if (eit->source()->degree() == 2) {
             CHECK(eit->source()->outgoing() == eit);
         }
@@ -174,29 +174,4 @@ TEST_CASE("Remove duplicates") {
     CHECK(p.vertex(1) == Point<Inexact>{1, 0});
     CHECK(p.vertex(2) == Point<Inexact>{1, 1});
     CHECK(p.vertex(3) == Point<Inexact>{0, 1});
-}
-
-TEST_CASE("Flatten polygons in bbox") {
-    auto rs = readRegionSetFromIpe("data/test/flat_stacking/complex.ipe");
-    auto bbox = rs.bbox();
-    Rectangle<Inexact> rect(bbox.xmin(), bbox.ymin(), bbox.xmax(), bbox.ymax());
-    std::vector<Polygon<Inexact>> polygons;
-    for (const auto& r : rs.regions) {
-        polygons.push_back(r.geometry.polygons_with_holes.front().outer_boundary());
-        if (polygons.back().is_clockwise_oriented()) {
-            polygons.back().reverse_orientation();
-        }
-    }
-    std::vector<Polygon<Inexact>> flattened;
-    flattenPolygonsInBbox(polygons.begin(), polygons.end(), std::back_inserter(flattened), rect, M_EPSILON);
-
-    using namespace renderer;
-    IpeRenderer renderer;
-
-    renderer.addPainting([&flattened](GeometryRenderer& r) {
-        for (const auto& flat : flattened) {
-            r.draw(flat);
-        }
-    });
-    renderer.save("debugging_flattening.ipe");
 }

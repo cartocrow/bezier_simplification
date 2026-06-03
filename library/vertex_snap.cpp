@@ -101,7 +101,7 @@ void snapVertices(RegionSet<Inexact>& regionSet, std::optional<double> epsilon) 
         Rectangle<Inexact> query(bbox.xmin(), bbox.ymin(), bbox.xmax(), bbox.ymax());
 
         std::vector<RegionSetVertex> candidates;
-        pqt.findContained(query, [&rsVertex, &candidates](RegionSetVertex& vertex) {
+        pqt.findContained(query, [&rsVertex, &candidates](RegionSetVertex vertex) {
             if (vertex.regionIndex == rsVertex.regionIndex) return;
             if (vertex.regionIndex != rsVertex.regionIndex ||
                 vertex.holeIndex != rsVertex.holeIndex ||

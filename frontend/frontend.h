@@ -28,7 +28,7 @@ using namespace cartocrow;
 using namespace cartocrow::renderer;
 using namespace cartocrow::curved_simplification;
 
-using Graph = BezierCollapseGraphWithHistoryAndIndex;
+using Graph = BezierCollapseGraphWithHistoryExtended;
 using ApproximatedGraph = ApproximatedBezierGraph<Graph>;
 using Traits = StevenBCTraits<Graph>;
 using Collapse = BezierCollapse<Graph, Traits>;
@@ -196,7 +196,7 @@ struct Dragging {
 
 class GraphPainting : public GeometryPainting {
 public:
-    BaseGraph& m_graph;
+    Graph& m_graph;
 
     struct DrawSettings {
         CGAL::Aff_transformation_2<Inexact> m_trans;
@@ -210,7 +210,7 @@ public:
 
     DrawSettings m_drawSettings;
 
-    GraphPainting(BaseGraph& graph, DrawSettings drawSettings = DrawSettings{}) : m_graph(graph), m_drawSettings(drawSettings) {};
+    GraphPainting(Graph& graph, DrawSettings drawSettings = DrawSettings{}) : m_graph(graph), m_drawSettings(drawSettings) {};
 
     void paint(GeometryRenderer& renderer) const override {
         const auto& m_trans = m_drawSettings.m_trans;
@@ -285,9 +285,9 @@ class BezierSimplificationDemo : public QMainWindow {
     std::unique_ptr<DoubleSliderSpinBox> m_minComponentLength;
     std::unique_ptr<DoubleSliderSpinBox> m_minCrumbArea;
     std::unique_ptr<ComplexitySliders> m_complexitySliders;
-    Forcer m_forcer;
     DoubleSlider* m_minAngle;
     ApproximatedGraph m_approxGraph;
+    Forcer m_forcer;
     QTabWidget* m_tabs;
     QCheckBox* m_editControlPoints;
     QSpinBox* m_desiredComplexity;
@@ -338,8 +338,8 @@ class BezierSimplificationDemo : public QMainWindow {
 
     bool m_shiftDown = false;
     bool m_altDown = false;
-    std::optional<std::pair<BaseGraph::Edge_handle, CubicBezierCurve::CurvePoint>> m_shiftNearest;
-    std::optional<BaseGraph::Vertex_handle> m_altNearest;
+    std::optional<std::pair<Graph::Edge_handle, CubicBezierCurve::CurvePoint>> m_shiftNearest;
+    std::optional<Graph::Vertex_handle> m_altNearest;
 
     void loadInput(const std::filesystem::path& path);
     void repaintVoronoi();

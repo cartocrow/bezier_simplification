@@ -5,7 +5,6 @@
 #include <cartocrow/data_structures/indexed_priority_queue.h>
 #include "core/bezier_graph_2.h"
 #include "common.h"
-#include "curved_graph_with_history.h"
 #include "bezier_curve_quad_tree.h"
 
 #include "utils.h"
@@ -43,14 +42,11 @@ concept BCSetup = requires(typename BG::Edge_handle e) {
 	{ BCT::determineCollapse(e) };
 };
 struct ECData;
-struct HECData;
-struct HECIData;
+struct ECEData;
 
-using HECGraph = Bezier_graph_2<std::monostate, HECData>;
-using HECIGraph = Bezier_graph_2<std::monostate, HECIData>;
 using BezierCollapseGraph = Bezier_graph_2<std::monostate, ECData>;
-using BezierCollapseGraphWithHistory = CollapseHistoryGraphAdaptor<HECGraph>;
-using BezierCollapseGraphWithHistoryAndIndex = CollapseHistoryGraphAdaptor<HECIGraph>;
+using BezierCollapseGraphWithHistory = Bezier_graph_with_history_2<std::monostate, ECData>;
+using BezierCollapseGraphWithHistoryExtended = Bezier_graph_with_history_2<std::monostate, ECEData>;
 
 template <class Edge_handle>
 struct ECBase {
@@ -64,20 +60,14 @@ struct ECBase {
 };
 struct ECData : ECBase<typename BezierCollapseGraph::Edge_handle> {
 };
-struct HECData : ECBase<typename BezierCollapseGraphWithHistory::Edge_handle> {
-    std::shared_ptr<Operation<HECGraph>> hist;
-    std::shared_ptr<Operation<HECGraph>> futr;
-};
-struct HECIData : ECBase<typename BezierCollapseGraphWithHistoryAndIndex::Edge_handle> {
-    std::shared_ptr<Operation<HECIGraph>> hist;
-    std::shared_ptr<Operation<HECIGraph>> futr;
+struct ECEData : ECBase<typename BezierCollapseGraphWithHistoryExtended::Edge_handle> {
     int index;
     bool collapse_allowed = true;
 };
 }
 using BezierCollapseGraph = detail::BezierCollapseGraph;
 using BezierCollapseGraphWithHistory = detail::BezierCollapseGraphWithHistory;
-using BezierCollapseGraphWithHistoryAndIndex = detail::BezierCollapseGraphWithHistoryAndIndex;
+using BezierCollapseGraphWithHistoryExtended = detail::BezierCollapseGraphWithHistoryExtended;
 template <class BG, class BCT>// requires detail::BCSetup<BG, BCT>
 class BezierCollapse {
   private:
@@ -92,7 +82,7 @@ class BezierCollapse {
 
   private:
 	void update(Edge_handle e) {
-        if constexpr (std::is_same_v<BG, BezierCollapseGraphWithHistoryAndIndex>) {
+        if constexpr (std::is_same_v<BG, BezierCollapseGraphWithHistoryExtended>) {
             if (!e->data().collapse_allowed) return;
         }
 
@@ -117,14 +107,14 @@ class BezierCollapse {
 	BezierCollapse(BG& graph, BCT traits) : m_g(graph), m_traits(std::move(traits)) {};
 	void initialize() {
         std::vector<CubicBezierCurve> curves;
-        for (auto eit = m_g.edges_begin(); eit != m_g.edges_end(); ++eit) {
+        for (auto eit : m_g.edges()) {
             curves.push_back(eit->curve());
         }
         Box bigBbox = CGAL::bbox_2(curves.begin(), curves.end());
         Rectangle<Inexact> bigRect(bigBbox.xmin(), bigBbox.ymin(), bigBbox.xmax(), bigBbox.ymax());
         m_bcqt = std::make_unique<BezierCurveQuadTree<BG>>(bigRect, 10, 0.05);
 
-        for (auto eit = m_g.edges_begin(); eit != m_g.edges_end(); ++eit) {
+        for (auto eit : m_g.edges()) {
             m_bcqt->insert(eit);
         }
 
@@ -133,14 +123,14 @@ class BezierCollapse {
         std::vector<std::future<void>> futures;
 #endif
 
-        for (auto eit = m_g.edges_begin(); eit != m_g.edges_end(); ++eit) {
+        for (auto eit : m_g.edges()) {
             eit->data().blocked_by.clear();
             eit->data().blocking.clear();
             eit->data().blocked_by_degzero = false;
 #ifndef __EMSCRIPTEN__
             futures.emplace_back(std::async(std::launch::async, [eit, this]() {
 #endif
-                if constexpr (std::is_same_v<BG, BezierCollapseGraphWithHistoryAndIndex>) {
+                if constexpr (std::is_same_v<BG, BezierCollapseGraphWithHistoryExtended>) {
                     if (eit->data().collapse_allowed) {
                         m_traits.determineCollapse(eit);
                     }
@@ -150,11 +140,11 @@ class BezierCollapse {
 #endif
         }
 
-#ifndef __EMSCRIPTEN__
-        for (auto& f : futures) f.get();
-#endif
-        for (auto eit = m_g.edges_begin(); eit != m_g.edges_end(); ++eit) {
-            if constexpr (std::is_same_v<BG, BezierCollapseGraphWithHistoryAndIndex>) {
+//#ifndef __EMSCRIPTEN__
+//        for (auto& f : futures) f.get();
+//#endif
+        for (auto eit : m_g.edges()) {
+            if constexpr (std::is_same_v<BG, BezierCollapseGraphWithHistoryExtended>) {
                 if (eit->data().collapse_allowed) {
                     m_q.push(eit);
                 }
@@ -343,13 +333,15 @@ class BezierCollapse {
 
         const auto& clps = edata.collapse->result;
 
-        m_g.startBatch();
+        m_g.history().start_group();
 
         if (auto* clps2P = std::get_if<detail::Collapse2>(&clps)) {
             auto& clps2 = *clps2P;
             Edge_handle prev = e->prev();
 
             const auto& newCurve = clps2.replacement;
+            
+            std::cout << "new curve: " << newCurve.source() << " " << newCurve.sourceControl() << " " << newCurve.targetControl() << " " << newCurve.target() << std::endl;
 
             // Update queue
             m_q.remove(prev);
@@ -364,13 +356,16 @@ class BezierCollapse {
 
             // Perform the collapse
             Edge_handle eh;
-            if constexpr (std::is_same_v<BG, BezierCollapseGraphWithHistoryAndIndex>) {
+            if constexpr (std::is_same_v<BG, BezierCollapseGraphWithHistoryExtended>) {
                 auto index = e->data().index;
                 eh = m_g.merge_edge_with_prev(e, newCurve);
                 eh->data().index = index;
             } else {
                 eh = m_g.merge_edge_with_prev(e, newCurve);
             }
+
+            auto actualNew = eh->curve();
+            std::cout << "actual new curve: " << actualNew.source() << " " << actualNew.sourceControl() << " " << actualNew.targetControl() << " " << actualNew.target() << std::endl;
 
             // Update quadtree
             m_bcqt->insert(eh);
@@ -406,10 +401,18 @@ class BezierCollapse {
             clearBlockInfo(prev);
             clearBlockInfo(next);
 
+            std::cout << "new curve 0: " << c0.source() << " " << c0.sourceControl() << " " << c0.targetControl() << " " << c0.target() << std::endl;
+            std::cout << "new curve 1: " << c1.source() << " " << c1.sourceControl() << " " << c1.targetControl() << " " << c1.target() << std::endl;
+
+            std::cout << "before curve prev: " << prev->source()->point() << prev->curve().source() << "  " << prev->curve().sourceControl() << " " << prev->curve().targetControl() << " " << prev->curve().target() << std::endl;
+            std::cout << "before curve: " << e->source()->point() << e->curve().source() << "  " << e->curve().sourceControl() << " " << e->curve().targetControl() << " " << e->curve().target() << std::endl;
+            std::cout << "before curve next: " << next->source()->point() << next->curve().source() << "  " << next->curve().sourceControl() << " " << next->curve().targetControl() << " " << next->curve().target() << std::endl;
+
+
             // Perform the collapse
             Edge_handle eh1;
             Edge_handle eh2;
-            if constexpr (std::is_same_v<BG, BezierCollapseGraphWithHistoryAndIndex>) {
+            if constexpr (std::is_same_v<BG, BezierCollapseGraphWithHistoryExtended>) {
                 auto index = e->data().index;
                 auto v = m_g.collapse_edge(e, c0, c1);
                 eh1 = v->incoming();
@@ -421,6 +424,11 @@ class BezierCollapse {
                 eh1 = v->incoming();
                 eh2 = v->outgoing();
             }
+
+            auto eh1c = eh1->curve();
+            auto eh2c = eh2->curve();
+            std::cout << "real new curve 0: " << eh1c.source() << " " << eh1c.sourceControl() << " " << eh1c.targetControl() << " " << eh1c.target() << std::endl;
+            std::cout << "real new curve 1: " << eh2c.source() << " " << eh2c.sourceControl() << " " << eh2c.targetControl() << " " << eh2c.target() << std::endl;
 
             // Update quadtree
             m_bcqt->insert(eh1);
@@ -439,7 +447,7 @@ class BezierCollapse {
             throw std::runtime_error("Unknown collapse");
         }
 
-        m_g.endBatch();
+        m_g.history().end_group();
     }
 
 	bool step() {
