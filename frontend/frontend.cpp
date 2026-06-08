@@ -1495,18 +1495,55 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_collapse(m_graph, Trait
             auto eh2 = m_editGraph.add_edge(vh2, vh1, CubicBezierCurve(vh2->point(), vh2->point() - Vector<Inexact>(0, size / 4), p - Vector<Inexact>(0, size / 4), p));
             m_editGraph.history().end_group();
 
-            eh1->data().index = m_nextArcIndex;
-            eh2->data().index = m_nextArcIndex;
+            auto arcIndex = m_nextArcIndex++;
+            eh1->data().index = arcIndex;
+            eh2->data().index = arcIndex;
 
-            //m_inputTopology.features.emplace_back(BezierTopoSet::PolygonTopology{ {{static_cast<int>(m_nextArcIndex)}} }, RegionAttributes{});
-            m_inputTopology.features.emplace_back(BezierTopoSet::PolygonSetTopology{ {{{static_cast<int>(m_nextArcIndex)}}} }, RegionAttributes{});
+            m_inputTopology.features.emplace_back(BezierTopoSet::PolygonSetTopology{ {{{static_cast<int>(arcIndex)}}} }, RegionAttributes{});
             if (!m_featuresOverlap) {
-                for (const auto& f : m_inputTopology.features) {
+                BezierTopoSet ts;
+                ts.features = m_inputTopology.features;
+                ts.arcs.resize(arcIndex + 1);
+                saveGraphIntoTopoSet(m_editGraph, ts);
+                for (int featureIndex = 0; featureIndex < ts.features.size(); ++featureIndex) {
+                    auto& f = ts.features[featureIndex];
                     // if feature contains new feature, make a hole
+
+                    if (auto* pgnSTP = std::get_if<BezierTopoSet::PolygonSetTopology>(&f.topology)) {
+                        int theSplineGonIndex = -1;
+                        auto& pgnST = *pgnSTP;
+                        auto g = getGeometry(pgnST, ts);
+
+
+                        for (int splineGonIndex = 0; splineGonIndex < g.size(); ++splineGonIndex) {
+                            auto& splineGon = g[splineGonIndex];
+                            if (splineGon.empty()) continue;
+
+                            auto outerRing = splineGon[0];
+                            if (outerRing.boundedSide(p) == CGAL::ON_UNBOUNDED_SIDE) {
+                                continue;
+                            }
+
+                            bool insideHole = false;
+                            for (int i = 1; i < splineGon.size(); ++i) {
+                                if (splineGon[i].boundedSide(p) == CGAL::ON_BOUNDED_SIDE) {
+                                    insideHole = true;
+                                    break;
+                                }
+                            }
+                            if (insideHole) continue;
+
+                            theSplineGonIndex = splineGonIndex;
+                            break;
+                        }
+
+                        if (theSplineGonIndex >= 0) {
+                            std::vector<int> newHole({ static_cast<int>(arcIndex) });
+                            std::get<BezierTopoSet::PolygonSetTopology>(m_inputTopology.features[featureIndex].topology).arcs[theSplineGonIndex].push_back(newHole);
+                        }
+                    }
                 }
             }
-
-            ++m_nextArcIndex;
 
             baseModified(true);
             updateEditables();

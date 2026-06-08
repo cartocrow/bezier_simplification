@@ -36,4 +36,50 @@ StraightTopoSet<Inexact> approximate(const BezierTopoSet& bTopoSet) {
 
     return sTopoSet;
 }
+
+std::vector<std::vector<CubicBezierSpline>> getGeometry(const TopoSet<CubicBezierSpline>::PolygonSetTopology& pgnSetTopology, const TopoSet<CubicBezierSpline>& topoSet) {
+    std::vector<std::vector<CubicBezierSpline>> polygonSet;
+
+    for (const auto& polygonWithHolesArcs : pgnSetTopology.arcs) {
+        std::vector<CubicBezierSpline> polygonWithHoles;
+        for (const auto& polygonArcs : polygonWithHolesArcs) {
+            CubicBezierSpline polygon;
+            Point<Inexact> last;
+            for (int arcIx : polygonArcs) {
+                const auto& arc = topoSet.arcs[arcIx];
+
+                // We currently don't distinguish reverse arcs so just check which one we need
+                bool reverse = false;
+                if (polygon.empty()) {
+                    if (polygonArcs.size() > 1) {
+                        reverse = topoSet.arcs[polygonArcs[1]].source() != topoSet.arcs[polygonArcs[0]].target() && topoSet.arcs[polygonArcs[1]].target() != topoSet.arcs[polygonArcs[0]].target();
+
+                    }
+                }
+                else {
+                    reverse = arc.source() != last;
+                }
+
+                if (!reverse) {
+                    if (!polygon.empty() && last != arc.source()) {
+                        std::cerr << "Arcs do not connect!" << std::endl;
+                    }
+                    polygon.appendSpline(arc);
+                    last = polygon.target();
+                }
+                else {
+                    if (!polygon.empty() && last != arc.target()) {
+                        std::cerr << "Arcs do not connect!" << std::endl;
+                    }
+                    polygon.appendSpline(arc.reversed());
+                    last = polygon.target();
+                }
+            }
+            polygonWithHoles.push_back(polygon);
+        }
+        polygonSet.push_back(polygonWithHoles);
+    }
+
+    return polygonSet;
+}
 }

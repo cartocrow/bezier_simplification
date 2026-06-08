@@ -2,6 +2,7 @@
 
 #include <cartocrow/core/core.h>
 #include <cartocrow/core/polyline.h>
+
 #include "region_set.h"
 
 #include <CGAL/General_polygon_set_2.h>
