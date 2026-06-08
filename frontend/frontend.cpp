@@ -635,8 +635,8 @@ void BezierSimplificationDemo::addIOTab() {
         saveGraphIntoTopoSet(theBaseGraph, toposet);
         std::string jsonFileName = filePath.stem().string() + ".json";
         std::filesystem::path jsonFilePath = filePath.has_extension() ? filePath.parent_path() / jsonFileName : filePath / jsonFileName;
-        exportTopoSetToJson(jsonFilePath, m_toposet.transform(m_transform.inverse()), m_spatialRef);
-        exportTopoSetUsingGDAL(filePath, approximate(m_toposet), m_transform.inverse(), m_spatialRef, stackPolygons->isChecked());
+        exportTopoSetToJson(jsonFilePath, toposet.transform(m_transform.inverse()), m_spatialRef);
+        exportTopoSetUsingGDAL(filePath, approximate(toposet), m_transform.inverse(), m_spatialRef, stackPolygons->isChecked());
     });
 
     connect(m_editControlPoints, &QCheckBox::stateChanged, [this]() {
