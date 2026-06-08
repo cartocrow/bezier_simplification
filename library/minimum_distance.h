@@ -614,12 +614,19 @@ class MinimumDistanceForcer {
     double m_minAngle;
     double m_averageEdgeLength = 0;
     bool m_ignoreBbox = false;
+
+  private:
     StraightGraph& m_g;
     using Loop = std::vector<typename StraightGraph::Edge_handle>;
     std::vector<Loop> m_loops;
-    Graph_edge_map<StraightGraph, Segment<Inexact>> m_originalSegments;
-    Graph_edge_map<StraightGraph, Loop*> m_edgeToLoop;
-    Graph_vertex_map<StraightGraph, Loop*> m_vertexToLoop;
+    Graph_static_edge_map<StraightGraph, Segment<Inexact>> m_originalSegments;
+    Graph_static_edge_map<StraightGraph, Loop*> m_edgeToLoop;
+    Graph_static_vertex_map<StraightGraph, Loop*> m_vertexToLoop;
+  public:
+
+      StraightGraph& graph() {
+          return m_g;
+      }
 
     Box m_bbox;
 
@@ -846,8 +853,6 @@ class MinimumDistanceForcer {
 
     void identifyLoops() {
         m_loops.clear();
-        //m_edgeToLoop = Graph_edge_map(m_g, nullptr);
-        //m_vertexToLoop = Graph_vertex_map(m_g, nullptr);
         m_edgeToLoop.assign(nullptr);
         m_vertexToLoop.assign(nullptr);
 
@@ -891,9 +896,15 @@ class MinimumDistanceForcer {
     MinimumDistanceForcer(StraightGraph& graph, double minDist) : m_g(graph), m_requiredMinDist(minDist), m_originalSegments(graph, Segment<Inexact>({ 0, 0 }, { 0, 0 })), m_vertexToLoop(graph, nullptr), m_edgeToLoop(graph, nullptr) {};
 
     void initialize() {
+
+        m_originalSegments = Graph_static_edge_map<StraightGraph, Segment<Inexact>>(m_g, Segment<Inexact>({ 0, 0 }, { 0, 0 }));
+        m_vertexToLoop = Graph_static_vertex_map<StraightGraph, Loop*>(m_g, nullptr);
+        m_edgeToLoop = Graph_static_edge_map<StraightGraph, Loop*>(m_g, nullptr);
+
         for (auto eit : m_g.edges()) {
             m_originalSegments[eit] = eit->curve();
         }
+
         m_bbox = m_g.bbox();
         computeAverageEdgeLength();
         identifyLoops();

@@ -60,7 +60,7 @@ void snapVertices(RegionSet<Inexact>& regionSet, std::optional<double> epsilon) 
 	Rectangle<Inexact> box(bbox.xmin(), bbox.ymin(), bbox.xmax(), bbox.ymax());
 	PointQuadTree<RegionSetVertexPQTTraits> pqt(box, 10);
 
-    double avgLength = 0;
+    std::vector<double> lengths;
     int polygonCount = 0;
 	
 	std::vector<RegionSetVertex> rsVertices;
@@ -72,31 +72,38 @@ void snapVertices(RegionSet<Inexact>& regionSet, std::optional<double> epsilon) 
             double avgLengthOuter = 0;
 			for (int vertexIndex = 0; vertexIndex < pgnWH.outer_boundary().size(); ++vertexIndex) {
 				rsVertices.emplace_back(&regionSet, regionIndex, polygonIndex, std::nullopt, vertexIndex);
-                avgLengthOuter += sqrt(CGAL::squared_distance(pgnWH.outer_boundary().vertex(vertexIndex), pgnWH.outer_boundary().vertex((vertexIndex + 1) % pgnWH.outer_boundary().size())));
+                if (!epsilon.has_value())
+                    lengths.push_back(sqrt(CGAL::squared_distance(pgnWH.outer_boundary().vertex(vertexIndex), pgnWH.outer_boundary().vertex((vertexIndex + 1) % pgnWH.outer_boundary().size()))));
 			}
-            avgLengthOuter /= pgnWH.outer_boundary().size();
-            avgLength += avgLengthOuter;
 			for (int holeIndex = 0; holeIndex < pgnWH.holes().size(); ++holeIndex) {
                 double avgLengthHole = 0;
 				auto& hole = pgnWH.holes()[holeIndex];
 				for (int vertexIndex = 0; vertexIndex < hole.size(); ++vertexIndex) {
 					rsVertices.emplace_back(&regionSet, regionIndex, polygonIndex, holeIndex, vertexIndex);
-                    avgLengthHole += sqrt(CGAL::squared_distance(hole.vertex(vertexIndex), hole.vertex((vertexIndex + 1) % hole.size())));
+                    if (!epsilon.has_value())
+                        lengths.push_back(sqrt(CGAL::squared_distance(hole.vertex(vertexIndex), hole.vertex((vertexIndex + 1) % hole.size()))));
 				}
-                avgLengthHole /= hole.size();
-                avgLength += avgLengthHole;
                 ++polygonCount;
 			}
 		}
 	}
-    avgLength /= polygonCount;
 
 	for (auto& rsVertex : rsVertices) {
 		pqt.insert(rsVertex);
 	}
 
+    double theEpsilon;
+    if (epsilon.has_value()) {
+        theEpsilon = *epsilon;
+    }
+    else {
+        std::sort(lengths.begin(), lengths.end());
+        auto medianLength = lengths[lengths.size() / 2];
+        theEpsilon = medianLength;
+    }
+
     for (auto& rsVertex : rsVertices) {
-        Circle<Inexact> circle(rsVertex.point(), epsilon.has_value() ? *epsilon : avgLength * 0.0025);
+        Circle<Inexact> circle(rsVertex.point(), theEpsilon * 0.0025);
         Box bbox = circle.bbox();
         Rectangle<Inexact> query(bbox.xmin(), bbox.ymin(), bbox.xmax(), bbox.ymax());
 

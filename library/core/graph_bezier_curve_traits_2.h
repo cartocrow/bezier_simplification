@@ -33,7 +33,7 @@ struct Graph_Bezier_curve_traits_2 {
 	}
 	static void move_start(const Point_2& start, const Point_2& end,
 		Curve_representation_2& rep) {
-		// skip
+		
 	}
 	static void move_end(const Point_2& start, const Point_2& end, Curve_representation_2& rep) {
 		// skip

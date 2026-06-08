@@ -194,9 +194,16 @@ struct Dragging {
     Point<Inexact> startPoint;
 };
 
+std::ostream& operator<<(std::ostream& os, const ControlPoint& cp);
+std::ostream& operator<<(std::ostream& os, const Dragging& d);
+
 class GraphPainting : public GeometryPainting {
 public:
     Graph& m_graph;
+
+    std::optional<Dragging> m_dragging;
+    std::optional<Point<Inexact>> m_dragPoint;
+    bool m_alignTangents = true;
 
     struct DrawSettings {
         CGAL::Aff_transformation_2<Inexact> m_trans;
@@ -261,6 +268,73 @@ public:
                 renderer.draw(vh->point().transform(m_trans));
             }
         }
+        if (m_dragging.has_value()) {
+            auto& cp = m_dragging->controlPoint;
+
+            renderer.setStroke(Color(255, 0, 255), 1.0);
+            if (auto vhP = std::get_if<Vertex_handle>(&cp.type)) {
+                auto vh = *vhP;
+                auto oldP = vh->point();
+                auto& p = *m_dragPoint;
+
+                renderer.draw(p.transform(m_trans));
+
+                for (auto ieit = vh->incident_edges_begin(); ieit != vh->incident_edges_end(); ++ieit) {
+                    auto eh = *ieit;
+                    if (eh->source() == vh) {
+                        auto c = eh->curve();
+                        auto diff = c.sourceControl() - oldP;
+                        auto newCurve = CubicBezierCurve(p, p + diff, c.targetControl(), c.target());
+                        renderer.draw(newCurve.transform(m_trans));
+                    }
+                    else {
+                        assert(eh->target() == vh);
+                        auto c = eh->curve();
+                        auto diff = c.targetControl() - oldP;
+                        auto newCurve = CubicBezierCurve(c.source(), c.sourceControl(), p + diff, p);
+                        renderer.draw(newCurve.transform(m_trans));
+                    }
+                }
+            }
+            else if (auto eiP = std::get_if<InnerControlPoint>(&cp.type)) {
+                auto [eh, b] = *eiP;
+                auto c = eh->curve();
+
+                auto& p = *m_dragPoint;
+
+                auto newCurve = CubicBezierCurve(c.source(), !b ? p : c.sourceControl(), b ? p : c.targetControl(), c.target());
+
+                renderer.draw(newCurve.transform(m_trans));
+
+                if (m_alignTangents) {
+                    if (b && eh->target()->degree() == 2) {
+                        auto next = eh->next();
+                        auto nc = next->curve();
+                        auto diff = nc.sourceControl() - nc.source();
+                        auto dist = sqrt(diff.squared_length());
+                        auto vec = newCurve.target() - newCurve.targetControl();
+                        vec /= sqrt(vec.squared_length());
+                        auto newSourceControl = nc.source() + vec * dist;
+                        auto newCurve = CubicBezierCurve(nc.source(), newSourceControl, nc.targetControl(), nc.target());
+                        renderer.draw(newCurve.transform(m_trans));
+                    }
+                    else if (!b && eh->source()->degree() == 2) {
+                        auto prev = eh->prev();
+                        auto pc = prev->curve();
+                        auto diff = pc.target() - pc.targetControl();
+                        auto dist = sqrt(diff.squared_length());
+                        auto vec = newCurve.sourceControl() - newCurve.source();
+                        vec /= sqrt(vec.squared_length());
+                        auto newTargetControl = pc.target() - vec * dist;
+                        auto newCurve = CubicBezierCurve(pc.source(), pc.sourceControl(), newTargetControl, pc.target());
+                        renderer.draw(newCurve.transform(m_trans));
+                    }
+                }
+
+                renderer.setStroke(Color(0, 0, 255), 1.0);
+                renderer.draw(p.transform(m_trans));
+            }
+        }
     }
 };
 
@@ -276,7 +350,9 @@ class BezierSimplificationDemo : public QMainWindow {
 	Collapse m_collapse;
     std::optional<Edge_handle> m_debugEdge;
     Graph m_original;
-    BezierTopoSet m_toposet;
+    TopoSetTopology m_inputTopology;
+    size_t m_nextArcIndex;
+    bool m_featuresOverlap;
     CGAL::Aff_transformation_2<Inexact> m_transform;
     CGAL::Aff_transformation_2<Inexact> m_backupTransform;
     OGRSpatialReference m_spatialRef;
@@ -339,6 +415,7 @@ class BezierSimplificationDemo : public QMainWindow {
     bool m_shiftDown = false;
     bool m_altDown = false;
     std::optional<std::pair<Graph::Edge_handle, CubicBezierCurve::CurvePoint>> m_shiftNearest;
+    std::optional<Point<Inexact>> m_shiftNew;
     std::optional<Graph::Vertex_handle> m_altNearest;
 
     void loadInput(const std::filesystem::path& path);
@@ -354,6 +431,7 @@ class BezierSimplificationDemo : public QMainWindow {
     void updateEditables();
     double getScale() const;
     double screenDistanceToMouse2(const Point<Inexact>& p) const;
+    void determineOverlap();
 
     void keyPressEvent(QKeyEvent *event) override;
     void keyReleaseEvent(QKeyEvent *event) override;

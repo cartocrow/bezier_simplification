@@ -24,10 +24,12 @@ StraightTopoSet<Inexact> approximate(const BezierTopoSet& bTopoSet) {
 
         Polyline<Inexact> sArc;
 
-        bArc.curve(0).samplePoints(isStraight(bArc.curve(0)) ? 2 : nPoints, std::back_inserter(sArc));
-        for (int i = 1; i < bArc.numCurves(); ++i) {
-            sArc.pop_back();
-            bArc.curve(i).samplePoints(isStraight(bArc.curve(i)) ? 2 : nPoints, std::back_inserter(sArc));
+        if (!bArc.empty()) {
+            bArc.curve(0).samplePoints(isStraight(bArc.curve(0)) ? 2 : nPoints, std::back_inserter(sArc));
+            for (int i = 1; i < bArc.numCurves(); ++i) {
+                sArc.pop_back();
+                bArc.curve(i).samplePoints(isStraight(bArc.curve(i)) ? 2 : nPoints, std::back_inserter(sArc));
+            }
         }
         sTopoSet.arcs.push_back(sArc);
     }

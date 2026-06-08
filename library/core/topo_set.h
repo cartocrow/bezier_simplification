@@ -95,6 +95,11 @@ struct Feature {
 };
 }
 
+struct TopoSetTopology {
+    using Feature = detail::Feature;
+    std::vector<Feature> features;
+};
+
 template <class Arc>
 struct TopoSet {
     std::vector<Arc> arcs;
@@ -119,9 +124,12 @@ struct TopoSet {
         return CGAL::bbox_2(arcs.begin(), arcs.end());
     }
 
+    TopoSetTopology topology() const {
+        return { features };
+    }
+
     TopoSet() = default;
 };
-
 
 template <class K>
 using StraightTopoSet = TopoSet<Polyline<K>>;

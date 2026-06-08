@@ -140,9 +140,9 @@ class BezierCollapse {
 #endif
         }
 
-//#ifndef __EMSCRIPTEN__
-//        for (auto& f : futures) f.get();
-//#endif
+#ifndef __EMSCRIPTEN__
+        for (auto& f : futures) f.get();
+#endif
         for (auto eit : m_g.edges()) {
             if constexpr (std::is_same_v<BG, BezierCollapseGraphWithHistoryExtended>) {
                 if (eit->data().collapse_allowed) {
@@ -341,8 +341,6 @@ class BezierCollapse {
 
             const auto& newCurve = clps2.replacement;
             
-            std::cout << "new curve: " << newCurve.source() << " " << newCurve.sourceControl() << " " << newCurve.targetControl() << " " << newCurve.target() << std::endl;
-
             // Update queue
             m_q.remove(prev);
 
@@ -363,9 +361,6 @@ class BezierCollapse {
             } else {
                 eh = m_g.merge_edge_with_prev(e, newCurve);
             }
-
-            auto actualNew = eh->curve();
-            std::cout << "actual new curve: " << actualNew.source() << " " << actualNew.sourceControl() << " " << actualNew.targetControl() << " " << actualNew.target() << std::endl;
 
             // Update quadtree
             m_bcqt->insert(eh);
@@ -401,14 +396,6 @@ class BezierCollapse {
             clearBlockInfo(prev);
             clearBlockInfo(next);
 
-            std::cout << "new curve 0: " << c0.source() << " " << c0.sourceControl() << " " << c0.targetControl() << " " << c0.target() << std::endl;
-            std::cout << "new curve 1: " << c1.source() << " " << c1.sourceControl() << " " << c1.targetControl() << " " << c1.target() << std::endl;
-
-            std::cout << "before curve prev: " << prev->source()->point() << prev->curve().source() << "  " << prev->curve().sourceControl() << " " << prev->curve().targetControl() << " " << prev->curve().target() << std::endl;
-            std::cout << "before curve: " << e->source()->point() << e->curve().source() << "  " << e->curve().sourceControl() << " " << e->curve().targetControl() << " " << e->curve().target() << std::endl;
-            std::cout << "before curve next: " << next->source()->point() << next->curve().source() << "  " << next->curve().sourceControl() << " " << next->curve().targetControl() << " " << next->curve().target() << std::endl;
-
-
             // Perform the collapse
             Edge_handle eh1;
             Edge_handle eh2;
@@ -427,8 +414,6 @@ class BezierCollapse {
 
             auto eh1c = eh1->curve();
             auto eh2c = eh2->curve();
-            std::cout << "real new curve 0: " << eh1c.source() << " " << eh1c.sourceControl() << " " << eh1c.targetControl() << " " << eh1c.target() << std::endl;
-            std::cout << "real new curve 1: " << eh2c.source() << " " << eh2c.sourceControl() << " " << eh2c.targetControl() << " " << eh2c.target() << std::endl;
 
             // Update quadtree
             m_bcqt->insert(eh1);
