@@ -885,7 +885,7 @@ class MinimumDistanceForcer {
 
         for (auto& component : m_loops) {
             for (auto eh: component) {
-                m_edgeToLoop[eh] = &m_loops.back();
+                m_edgeToLoop[eh] = &component;
                 m_vertexToLoop[eh->source()] = &component;
             }
         }

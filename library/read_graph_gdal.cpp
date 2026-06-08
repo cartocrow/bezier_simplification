@@ -202,7 +202,8 @@ std::pair<RegionSet<Inexact>, OGRSpatialReference> readRegionSetUsingGDAL(const 
         int i = 0;
         for( auto&& oField: *poFeature ) {
             std::string name = poFeature->GetDefnRef()->GetFieldDefn(i)->GetNameRef();
-            switch(oField.GetType()) {
+            if (oField.IsNull()) { continue; }
+            switch (oField.GetType()) {
                 case OFTInteger:
                     region.attributes[name] = static_cast<int>(oField.GetInteger());
                     break;
@@ -212,10 +213,15 @@ std::pair<RegionSet<Inexact>, OGRSpatialReference> readRegionSetUsingGDAL(const 
                 case OFTInteger64:
                     region.attributes[name] = static_cast<int64_t>(oField.GetInteger64());
                     break;
+                case OFTString: {
+                    region.attributes[name] = static_cast<std::string>(oField.GetString());
+                    break;
+
+                }
                 default:
                     std::cout << "Did not handle this type of attribute: " << oField.GetType() << std::endl;
                     break;
-            }
+                }
             ++i;
         }
 
@@ -270,6 +276,8 @@ void exportTopoSetUsingGDAL(const std::filesystem::path& path, const StraightTop
                 return OGRFieldDefn(attribute.c_str(), OFTInteger);
             } else if (std::holds_alternative<int64_t>(value)) {
                 return OGRFieldDefn(attribute.c_str(), OFTInteger64);
+            } else if (std::holds_alternative<std::string>(value)) {
+                return OGRFieldDefn(attribute.c_str(), OFTString);
             } else {
                 std::cerr << "Did not handle attribute type." << std::endl;
             }
@@ -297,6 +305,8 @@ void exportTopoSetUsingGDAL(const std::filesystem::path& path, const StraightTop
                     poFeature->SetField(attribute.c_str(), static_cast<int>(*vInt));
                 } else if (auto vInt64 = std::get_if<int64_t>(&data)) {
                     poFeature->SetField(attribute.c_str(), static_cast<GIntBig>(*vInt64));
+                } else if (auto vStr = std::get_if<std::string>(&data)) {
+                    poFeature->SetField(attribute.c_str(), vStr->c_str());
                 } else {
                     std::cout << "Did not handle attribute value." << std::endl;
                 }
@@ -361,6 +371,8 @@ void exportTopoSetUsingGDAL(const std::filesystem::path& path, const StraightTop
                     poFeature->SetField(attribute.c_str(), static_cast<int>(*vInt));
                 } else if (auto vInt64 = std::get_if<int64_t>(&data)) {
                     poFeature->SetField(attribute.c_str(), static_cast<GIntBig>(*vInt64));
+                } else if (auto vStr = std::get_if<std::string>(&data)) {
+                    poFeature->SetField(attribute.c_str(), vStr->c_str());
                 } else {
                     std::cout << "Did not handle attribute value." << std::endl;
                 }
