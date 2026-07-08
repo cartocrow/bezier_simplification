@@ -680,7 +680,7 @@ void BezierSimplificationDemo::addIOTab() {
     });
 
     connect(m_renderer, &GeometryWidget::dragMoved, [this, editAlignTangents](const Point<Inexact>& px) {
-        if (!m_editControlPoints->isChecked()) return;
+        if (!m_editControlPoints->isChecked() || m_dragging == nullptr) return;
         auto p = px.transform(m_transform);
         m_editGraphPainting->m_dragPoint = p;
         m_editGraphPainting->m_dragging = *m_dragging;
@@ -697,8 +697,7 @@ void BezierSimplificationDemo::addIOTab() {
     });
 
     connect(m_renderer, &GeometryWidget::dragEnded, [this, editAlignTangents](const Point<Inexact>& px) {
-        if (!m_editControlPoints->isChecked()) return;
-        if (m_dragging == nullptr) return;
+        if (!m_editControlPoints->isChecked() || m_dragging == nullptr) return;
         
         auto p = px.transform(m_transform);
         auto finalPosition = p;
@@ -779,10 +778,10 @@ void BezierSimplificationDemo::addSimplificationTab() {
 
     connect(&*m_complexitySliders, &ComplexitySliders::valueChanged, [this](double v) {
         resetEdits();
-        while (m_graph.number_of_edges() > v) {
+        while (m_graph.number_of_edges() > v && m_graph.history().can_redo()) {
             m_graph.history().redo();
         }
-        while (m_graph.number_of_edges() < v) {
+        while (m_graph.number_of_edges() < v && m_graph.history().can_undo()) {
             m_graph.history().undo();
         }
         m_renderer->repaint();

@@ -273,12 +273,10 @@ class BezierCollapse {
                 if (e->source()->degree() != 2) continue;
             } else if (std::holds_alternative<detail::Collapse3>(clps)) {
                 if (e->source()->degree() != 2 || e->target()->degree() != 2) continue;
+                Edge_handle prev = e->prev();
+                Edge_handle next = e->next();
+                if (prev == next) continue;
             }
-
-            Edge_handle prev = e->prev();
-            Edge_handle next = e->next();
-
-            if (prev == next) continue;
 
             auto [beforeSpline, afterSpline] = beforeAndAfterCollapse(e);
             Box box = beforeSpline.bbox() + afterSpline.bbox();
