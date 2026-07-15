@@ -449,7 +449,7 @@ void moveControlPoint(ControlPoint cp, Point<Inexact> p, bool alignTangents, Gra
 void BezierSimplificationDemo::repaintVoronoi() {
     m_voronoiPainting = PaintingRenderer();
     m_voronoiPainting.setMode(GeometryRenderer::stroke);
-    auto voronoiDrawer = VoronoiDrawer<MinimumDistanceForcer<std::monostate, std::monostate>::Gt>(&m_voronoiPainting);
+    auto voronoiDrawer = VoronoiDrawer<MinimumDistanceForcer<ApproximatedGraph>::Gt>(&m_voronoiPainting);
     for (auto eit = m_forcer.m_delaunay.finite_edges_begin(); eit != m_forcer.m_delaunay.finite_edges_end(); ++eit) {
         if (m_forcer.filterVoronoiEdge(*eit)) continue;
         using Exact_SDG_traits = CGAL::Segment_Delaunay_graph_traits_2<Exact>;
@@ -1571,7 +1571,7 @@ BezierSimplificationDemo::BezierSimplificationDemo() : m_collapse(m_graph, Trait
                 auto newCurve = fitCurve(points, inc.tangent(0), -out.tangent(1));
                 auto edgeData = vh->outgoing()->data();
 
-                auto eh = m_editGraph.merge_edge_with_prev(vh->outgoing(), newCurve);
+                auto eh = m_editGraph.merge_vertex(vh, newCurve);
                 eh->data().index = edgeData.index;
             }
 

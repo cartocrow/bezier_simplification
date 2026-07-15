@@ -44,7 +44,7 @@ concept HasChanged = requires(T t) {
 static_assert(HasChanged<ApproximatedBezierGraphEdgeData<Bezier_graph_2<std::monostate, std::monostate>>>);
 
 template <class BezierGraph>
-using ApproximatedBezierGraph = Straight_graph_2<ApproximatedBezierGraphVertexData<BezierGraph>, ApproximatedBezierGraphEdgeData<BezierGraph>, Inexact, SimpleGraph>;
+using ApproximatedBezierGraph = Straight_graph_2<ApproximatedBezierGraphVertexData<BezierGraph>, ApproximatedBezierGraphEdgeData<BezierGraph>, Inexact, typename BezierGraph::Graph_traits>;
 
 /// Approximates the given bezier graph by a straight-line graph.
 /// nPoints is the number of points each curve is approximated by and should be at least 2.
@@ -216,10 +216,11 @@ Point<K> projection(const Segment<K>& seg, const Point<K>& p) {
     return q;
 }
 
-template <class VD, class ED>
+template <class StraightGraph>
 class MinimumDistanceForcer {
     public:
-    using StraightGraph = Straight_graph_2<VD, ED, Inexact, SimpleGraph>;
+    using VD = typename StraightGraph::Vertex_data;
+    using ED = typename StraightGraph::Edge_data;
 
     typedef CGAL::Segment_Delaunay_graph_filtered_traits_without_intersections_2<Inexact, CGAL::Field_with_sqrt_tag> Gt;
 

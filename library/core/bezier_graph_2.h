@@ -5,8 +5,8 @@
 
 namespace cartocrow {
 template <class VD, class ED>
-using Bezier_graph_2 = Graph_2<VD, ED, Graph_Bezier_curve_traits_2, SimpleGraph>;
+using Bezier_graph_2 = Graph_2<VD, ED, Graph_Bezier_curve_traits_2, DecomposedGraph<false, int>>;
 
 template <class VD, class ED>
-using Bezier_graph_with_history_2 = Graph_2<VD, ED, Graph_Bezier_curve_traits_2, HistoricSimpleGraph>;
+using Bezier_graph_with_history_2 = Graph_2<VD, ED, Graph_Bezier_curve_traits_2, DecomposedGraph<true, int>>;
 }

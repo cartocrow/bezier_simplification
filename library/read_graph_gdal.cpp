@@ -1,5 +1,4 @@
 #include "read_graph_gdal.h"
-#include <cartocrow/reader/gdal_conversion.h>
 #include <cartocrow/core/transform_helpers.h>
 
 #include <cartocrow/renderer/ipe_renderer.h>
@@ -57,100 +56,6 @@ OGRMultiPolygon polygonSetRawToOGRMultiPolygonT(const PolygonSetRaw<Inexact>& po
     }
 
     return ogrMultiPolygon;
-}
-
-Straight_graph_2<std::monostate, std::monostate, Inexact, SimpleGraph> readGraphUsingGDAL(const std::filesystem::path& path) {
-    GDALAllRegister();
-    GDALDataset *poDS;
-
-    poDS = (GDALDataset*) GDALOpenEx( path.string().c_str(), GDAL_OF_VECTOR, nullptr, nullptr, nullptr );
-    if( poDS == nullptr ) {
-        printf( "GDAL open failed.\n" );
-        exit( 1 );
-    }
-    OGRLayer* poLayer;
-    poLayer = poDS->GetLayer(0);
-
-    poLayer->ResetReading();
-
-    using Graph = Straight_graph_2<std::monostate, std::monostate, Inexact, SimpleGraph>;
-
-    Graph g;
-
-    std::unordered_map<Point<Inexact>, Graph::Vertex_handle> pToV;
-
-    auto getVertex = [&pToV, &g](const Point<Inexact>& p) {
-        if (pToV.contains(p)) {
-            return pToV.at(p);
-        } else {
-            auto newV = g.add_vertex(p);
-            pToV[p] = newV;
-            return newV;
-        }
-    };
-
-    auto insertPolygon = [&](const Polygon<Inexact> polygon) {
-        if (polygon.is_empty()) return;
-        auto lastV = getVertex(polygon.vertex(0));
-        pToV[polygon.vertex(0)] = lastV;
-        for (const auto& seg : polygon.edges()) {
-            auto targetV = getVertex(seg.target());
-
-            bool oppositeExists = false;
-            bool alreadyExists = false;
-            for (auto ieit = targetV->incident_edges_begin(); ieit != targetV->incident_edges_end(); ++ieit) {
-                if ((*ieit)->target() == lastV && (*ieit)->curve().opposite() == seg) {
-                    oppositeExists = true;
-                    break;
-                }
-                if ((*ieit)->source() == lastV && (*ieit)->curve() == seg) {
-                    alreadyExists = true;
-                    break;
-                }
-            }
-            if (!oppositeExists && !alreadyExists) {
-                g.add_edge(lastV, targetV, seg);
-            }
-            lastV = targetV;
-        }
-    };
-
-    auto insertPolygonWithHoles = [&](const PolygonWithHoles<Inexact> polygonWithHoles) {
-        insertPolygon(polygonWithHoles.outer_boundary());
-        for (const auto& hole : polygonWithHoles.holes()) {
-            insertPolygon(hole);
-        }
-    };
-
-    auto insertPolygonSet = [&](const PolygonSetRaw<Inexact>& polygonSet) {
-        const std::vector<PolygonWithHoles<Inexact>>& pgnsWithHoles = polygonSet.polygons_with_holes;
-        for (const auto& pgnWithHoles : pgnsWithHoles) {
-            insertPolygonWithHoles(pgnWithHoles);
-        }
-    };
-
-    for (auto& poFeature : *poLayer) {
-        OGRGeometry *poGeometry;
-
-        poGeometry = poFeature->GetGeometryRef();
-        switch(wkbFlatten(poGeometry->getGeometryType())) {
-            case wkbMultiPolygon: {
-                OGRMultiPolygon *poMultiPolygon = poGeometry->toMultiPolygon();
-                insertPolygonSet(ogrMultiPolygonToPolygonSetRaw(*poMultiPolygon));
-                break;
-            }
-            case wkbPolygon: {
-                OGRPolygon* poly = poGeometry->toPolygon();
-                insertPolygonWithHoles(ogrPolygonToPolygonWithHoles(*poly));
-                break;
-            }
-//            case wkbLineString: {
-//            }
-            default: std::cout << "Did not handle this type of geometry: " << poGeometry->getGeometryName() << std::endl;
-        }
-    }
-
-    return g;
 }
 
 std::pair<RegionSet<Inexact>, OGRSpatialReference> readRegionSetUsingGDAL(const std::filesystem::path& path) {
