@@ -34,7 +34,7 @@ using Traits = StevenBCTraits<Graph>;
 using Collapse = BezierCollapse<Graph, Traits>;
 using Edge_handle = Graph::Edge_handle;
 using Vertex_handle = Graph::Vertex_handle;
-using Forcer = MinimumDistanceForcer<typename ApproximatedGraph::Vertex_data, typename ApproximatedGraph::Edge_data>;
+using Forcer = MinimumDistanceForcer<ApproximatedGraph>;
 
 struct ReferenceData {
     std::variant<QImage, GeometrySet<Inexact>> data;

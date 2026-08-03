@@ -396,10 +396,10 @@ class BezierCollapse {
             Edge_handle eh;
             if constexpr (std::is_same_v<BG, BezierCollapseGraphWithHistoryExtended>) {
                 auto index = e->data().index;
-                eh = m_g.merge_edge_with_prev(e, newCurve);
+                eh = m_g.merge_vertex(e->source(), newCurve);
                 eh->data().index = index;
             } else {
-                eh = m_g.merge_edge_with_prev(e, newCurve);
+                eh = m_g.merge_vertex(e->source(), newCurve);
             }
 
             // Update quadtree
