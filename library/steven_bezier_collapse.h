@@ -8,7 +8,7 @@
 #include <cartocrow/core/arrangement_helpers.h>
 #include "sym_diff.h"
 
-#define DEBUG_COLLAPSE 0
+#define DEBUG_COLLAPSE 1
 
 #if DEBUG_COLLAPSE
 #include <cartocrow/renderer/ipe_renderer.h>
@@ -386,6 +386,7 @@ private:
         auto c0_maybe = closeFitSub(spline1, a0);
         auto c1_maybe = closeFitSub(spline2, a1);
 
+        if (!c0_maybe.has_value()) return std::nullopt;
         if (!c1_maybe.has_value()) return std::nullopt;
 
 #if DEBUG_COLLAPSE

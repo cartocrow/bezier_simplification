@@ -30,7 +30,7 @@ double symmetricDifferenceArrangement(const CubicBezierSpline& spline1, const Cu
     for (auto eit = beforePlE.edges_begin(); eit != beforePlE.edges_end(); ++eit) {
         beforePlXMCurves.emplace_back(*eit);
     }
-    CGAL::insert_non_intersecting_curves(arr, beforePlXMCurves.begin(), beforePlXMCurves.end());
+    CGAL::insert(arr, beforePlXMCurves.begin(), beforePlXMCurves.end());
     CGAL::insert(arr, afterPlE.edges_begin(), afterPlE.edges_end());
 
     double symDiffErr = 0;

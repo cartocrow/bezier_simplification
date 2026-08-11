@@ -94,7 +94,23 @@ class BezierCollapse {
         }
         edata.blocked_by.clear();
 
+
 		m_traits.determineCollapse(e);
+        if (e->data().collapse.has_value())  {
+            if (auto* clps3P = std::get_if<detail::Collapse3>(&e->data().collapse->result)) {
+                auto& clps3 = *clps3P;
+                const auto& c0 = clps3.before;
+                const auto& c1 = clps3.after;
+                //std::cout << c0.target() << std::endl;
+                if (c0.target() == Point<Inexact>(0, 0)) {
+                    //std::cout << "Problem!" << std::endl;
+                //    m_traits.debug = true;
+                //    m_traits.determineCollapse(e);
+                //    m_traits.debug = false;
+                }
+            }
+        }
+
 		if (m_q.contains(e)) {
 			m_q.update(e);
 		} else {
@@ -133,6 +149,21 @@ class BezierCollapse {
                 if constexpr (std::is_same_v<BG, BezierCollapseGraphWithHistoryExtended>) {
                     if (eit->data().collapse_allowed) {
                         m_traits.determineCollapse(eit);
+
+                        if (eit->data().collapse.has_value()) {
+                            if (auto* clps3P = std::get_if<detail::Collapse3>(&eit->data().collapse->result)) {
+                                auto& clps3 = *clps3P;
+                                const auto& c0 = clps3.before;
+                                const auto& c1 = clps3.after;
+                                //std::cout << c0.target() << std::endl;
+                                if (c0.target() == Point<Inexact>(0, 0)) {
+                                    //std::cout << "Problem!" << std::endl;
+                                    //m_traits.debug = true;
+                                    //m_traits.determineCollapse(eit);
+                                    //m_traits.debug = false;
+                                }
+                            }
+                        }
                     }
                 }
 #ifndef __EMSCRIPTEN__
@@ -235,7 +266,7 @@ class BezierCollapse {
             xmCurvesAfter.emplace_back(pretendExact(*eit));
         }
         Arrangement<Exact> arr;
-        CGAL::insert_non_intersecting_curves(arr, xmCurvesBefore.begin(), xmCurvesBefore.end());
+        CGAL::insert(arr, xmCurvesBefore.begin(), xmCurvesBefore.end());
         CGAL::insert(arr, xmCurvesAfter.begin(), xmCurvesAfter.end());
 
         Polyline<Exact> testPl = pretendExact(edge->curve().polyline(nSegs));
@@ -333,11 +364,22 @@ class BezierCollapse {
 
         m_g.history().start_group();
 
+        //std::cout << m_g.number_of_edges() << std::endl;
+        //std::cout << "collapse cost: " << edata.collapse->cost << std::endl;
+
+        //if (m_g.number_of_edges() == 61) {
+        //    m_traits.debug = true;
+        //    m_traits.determineCollapse(e);
+        //    m_traits.debug = false;
+        //}
+
         if (auto* clps2P = std::get_if<detail::Collapse2>(&clps)) {
             auto& clps2 = *clps2P;
             Edge_handle prev = e->prev();
 
             const auto& newCurve = clps2.replacement;
+            //std::cout << "collapse 2" << std::endl;
+            //std::cout << newCurve.source() << "  " << newCurve.sourceControl() << "  " << newCurve.targetControl() << "  " << newCurve.target() << std::endl;
             
             // Update queue
             m_q.remove(prev);
@@ -378,6 +420,10 @@ class BezierCollapse {
             Edge_handle next = e->next();
             const auto& c0 = clps3.before;
             const auto& c1 = clps3.after;
+
+            //std::cout << "collapse 3" << std::endl;
+            //std::cout << c0.source() << "  " << c0.sourceControl() << "  " << c0.targetControl() << "  " << c0.target() << std::endl;
+            //std::cout << c1.source() << "  " << c1.sourceControl() << "  " << c1.targetControl() << "  " << c1.target() << std::endl;
 
             // Update queue
             m_q.remove(prev);
