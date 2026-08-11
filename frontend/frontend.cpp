@@ -90,7 +90,9 @@ void saveGraphIntoTopoSet(const Graph& graph, BezierTopoSet& topoSet) {
         if (auto pgnTP = std::get_if<BezierTopoSet::PolygonTopology>(&f.topology)) {
             auto& pgnT = *pgnTP;
             for (auto& ring : pgnT.arcs) {
-                std::erase_if(ring, [&](int i) { return topoSet.arcs[i].empty(); });
+                std::erase_if(ring, [&](int i) { 
+                    return topoSet.arcs[decodeArc(i).first].empty();
+                });
             }
 
             std::erase_if(pgnT.arcs, [](auto& vec) { return vec.empty(); });
@@ -99,7 +101,8 @@ void saveGraphIntoTopoSet(const Graph& graph, BezierTopoSet& topoSet) {
             auto& pgnSetT = *pgnSetTP;
             for (auto& pgn : pgnSetT.arcs) {
                 for (auto& ring : pgn) {
-                    std::erase_if(ring, [&](int i) { return topoSet.arcs[i].empty(); });
+                    std::erase_if(ring, [&](int i) { 
+                        return topoSet.arcs[decodeArc(i).first].empty(); });
                 }
                 std::erase_if(pgn, [](auto& vec) { return vec.empty(); });
             }
@@ -107,7 +110,7 @@ void saveGraphIntoTopoSet(const Graph& graph, BezierTopoSet& topoSet) {
         }
         else if (auto plTP = std::get_if<BezierTopoSet::PolylineTopology>(&f.topology)) {
             auto& plT = *plTP;
-            std::erase_if(plT.arcs, [&](int i) { return topoSet.arcs[i].empty(); });
+            std::erase_if(plT.arcs, [&](int i) { return topoSet.arcs[decodeArc(i).first].empty(); });
         }
     }
 
@@ -190,6 +193,7 @@ void insertTopoSetIntoGraph(const BezierTopoSet& ts, Graph& g, bool ignoreBbox) 
                 if ((*ieit)->target() == sourceV && (*ieit)->curve() == curve.reversed()) {
                     oppositeExists = true;
                     std::cout << "Found an opposite edge!" << std::endl;
+                    std::cout << (*ieit)->target()->point() << " -> " << (*ieit)->source()->point() << std::endl;
                     break;
                 }
                 if ((*ieit)->source() == sourceV && (*ieit)->curve() == curve) {

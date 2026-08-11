@@ -90,6 +90,8 @@ approximateBezierGraph(const BezierGraph& bg, int nPoints) {
         }
     }
 
+    g.initialize();
+
     return g;
 }
 
@@ -202,6 +204,8 @@ BezierGraph reconstructBezierGraph(const ApproximatedBezierGraph<BezierGraph>& s
             }
         }
     }
+
+    bg.initialize();
 
     return bg;
 }

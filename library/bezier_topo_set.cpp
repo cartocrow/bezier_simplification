@@ -45,22 +45,11 @@ std::vector<std::vector<CubicBezierSpline>> getGeometry(const TopoSet<CubicBezie
         for (const auto& polygonArcs : polygonWithHolesArcs) {
             CubicBezierSpline polygon;
             Point<Inexact> last;
-            for (int arcIx : polygonArcs) {
+            for (int h : polygonArcs) {
+                auto [arcIx, reversed] = decodeArc(h);
                 const auto& arc = topoSet.arcs[arcIx];
 
-                // We currently don't distinguish reverse arcs so just check which one we need
-                bool reverse = false;
-                if (polygon.empty()) {
-                    if (polygonArcs.size() > 1) {
-                        reverse = topoSet.arcs[polygonArcs[1]].source() != topoSet.arcs[polygonArcs[0]].target() && topoSet.arcs[polygonArcs[1]].target() != topoSet.arcs[polygonArcs[0]].target();
-
-                    }
-                }
-                else {
-                    reverse = arc.source() != last;
-                }
-
-                if (!reverse) {
+                if (!reversed) {
                     if (!polygon.empty() && last != arc.source()) {
                         std::cerr << "Arcs do not connect!" << std::endl;
                     }
