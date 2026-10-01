@@ -27,6 +27,14 @@ struct Graph_Bezier_curve_traits_2 {
 		const Curve_representation_2& rep) {
 		return curve(start, end, rep).bbox();
 	}
+	static CGAL::Direction_2<Kernel> source_direction(const Point_2& start, const Point_2& end,
+		const Curve_representation_2& rep) {
+		return CGAL::Direction_2<Kernel>(rep.source_control - start);
+	}
+	static CGAL::Direction_2<Kernel> target_direction(const Point_2& start, const Point_2& end,
+		const Curve_representation_2& rep) {
+		return CGAL::Direction_2<Kernel>(rep.target_control - end);
+	}
 	static void reverse_representation(const Point_2& start, const Point_2& end,
 		Curve_representation_2& rep) {
 		std::swap(rep.source_control, rep.target_control);
